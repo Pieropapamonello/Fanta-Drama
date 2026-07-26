@@ -11,12 +11,16 @@ app.secret_key = os.environ.get("FLASK_SECRET", "change-me-in-prod")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin")
 
 
-@app.before_first_request
 def start_bot():
     token = os.getenv("TELEGRAM_BOT_TOKEN", "")
     # If token is set we prefer webhook mode on Render; do not start polling here.
     if token and os.environ.get("FORCE_POLLING", "") == "1":
         bot.start_bot(token, background=True)
+
+try:
+    app.before_first_request(start_bot)
+except AttributeError:
+    app.before_serving(start_bot)
 
 
 @app.route("/")
