@@ -17,10 +17,9 @@ def start_bot():
     if token and os.environ.get("FORCE_POLLING", "") == "1":
         bot.start_bot(token, background=True)
 
-try:
-    app.before_first_request(start_bot)
-except AttributeError:
-    app.before_serving(start_bot)
+# Flask 3 removed before_first_request/before_serving hooks, so call the startup helper
+# only when the module is imported. It only starts polling if FORCE_POLLING=1.
+start_bot()
 
 
 @app.route("/")
