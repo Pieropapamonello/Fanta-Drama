@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Login - Fanta Drama</title>
+    <style>body{font-family:Arial;margin:2rem}</style>
+  </head>
+  <body>
+    <h1>Login</h1>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <ul>
+        {% for cat, msg in messages %}
+          <li>{{ msg }}</li>
+        {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+    <form action="/login" method="post">
+      <input type="password" name="password" placeholder="Password admin" required>
+      <button type="submit">Accedi</button>
+    </form>
+  </body>
+</html>

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Fanta Drama</title>
+    <style>
+      body { font-family: Arial, sans-serif; max-width: 900px; margin: 2rem auto; }
+      .card { border: 1px solid #ddd; padding: 1rem; margin-bottom: 1rem; }
+    </style>
+  </head>
+  <body>
+    <h1>Fanta Drama</h1>
+    <div style="float:right"><a href="/logout">Logout</a></div>
+    <div class="card">
+      <h2>Crea squadra</h2>
+      <form action="/crea_squadra" method="post">
+        <input name="name" placeholder="Nome squadra" required>
+        <input name="user_id" placeholder="Tuo user id (es. Telegram id)" required>
+        <button type="submit">Crea</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Squadre</h2>
+      {% for t in teams %}
+        <div>
+          <strong>{{ t.name }}</strong> — {{ t.points }} pt — membri: {{ t.members | join(', ') }}
+        </div>
+      {% else %}
+        <div>Nessuna squadra creata</div>
+      {% endfor %}
+    </div>
+
+    <div class="card">
+      <h2>Registra evento</h2>
+      <form action="/evento" method="post">
+        <input name="member" placeholder="Nome personaggio" required>
+        <input name="event_type" placeholder="Tipo evento (es. lite, gossip)" required>
+        <button type="submit">Registra</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Classifica personaggi</h2>
+      {% for name, pts in characters.items() %}
+        <div>{{ name }} — {{ pts }} pt</div>
+      {% else %}
+        <div>Nessun dato</div>
+      {% endfor %}
+    </div>
+  </body>
+</html>

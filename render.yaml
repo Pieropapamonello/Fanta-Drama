@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: fanta-drama
+    env: python
+    plan: free
+    buildCommand: ""
+    startCommand: "gunicorn web:app --bind 0.0.0.0:$PORT"
