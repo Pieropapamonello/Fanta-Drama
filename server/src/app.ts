@@ -11,6 +11,7 @@ import cards from './routes/cards'
 import events from './routes/events'
 import predictions from './routes/predictions'
 import admin from './routes/admin'
+import telegram from './routes/telegram'
 import path from 'path'
 
 const app = express()
@@ -20,6 +21,8 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       connectSrc: ["'self'", 'https://identitytoolkit.googleapis.com', 'https://securetoken.googleapis.com', 'https://www.googleapis.com'],
+      scriptSrc: ["'self'", 'https://telegram.org'],
+      frameSrc: ["'self'", 'https://oauth.telegram.org', 'https://telegram.org'],
       imgSrc: ["'self'", 'data:', 'https:'],
       styleSrc: ["'self'", "'unsafe-inline'", 'https:']
     }
@@ -38,6 +41,7 @@ app.use('/api/cards', cards)
 app.use('/api/events', events)
 app.use('/api/predictions', predictions)
 app.use('/api/admin', admin)
+app.use('/api/telegram', telegram)
 
 const clientDist = path.resolve(__dirname, '../../client/dist')
 app.use(express.static(clientDist))

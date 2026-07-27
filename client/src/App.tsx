@@ -15,6 +15,7 @@ import EventsList from './pages/EventsList'
 import CreateEvent from './pages/CreateEvent'
 import EventDetail from './pages/EventDetail'
 import ProtectedRoute from './components/ProtectedRoute'
+import TelegramLogin from './pages/TelegramLogin'
 
 export default function App() {
   return (
@@ -32,6 +33,7 @@ export default function App() {
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/telegram" element={<TelegramLogin />} />
           <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
           <Route path="/groups" element={<ProtectedRoute><GroupsList /></ProtectedRoute>} />
           <Route path="/groups/create" element={<ProtectedRoute><CreateGroup /></ProtectedRoute>} />
