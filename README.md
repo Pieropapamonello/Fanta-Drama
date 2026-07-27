@@ -6,7 +6,7 @@ MVP privato per gruppi di amici, eventi, Carte Drama e pronostici con crediti vi
 
 - React, Vite e TypeScript per l'interfaccia;
 - Firebase Authentication (email e password) per gli accessi;
-- accesso Telegram verificato lato server e convertito in sessione Firebase;
+- accesso tramite Telegram Mini App verificato lato server e convertito in sessione Firebase;
 - Express e Firebase Admin SDK per API protette;
 - Cloud Firestore come database;
 - un solo Web Service Render: `Fanta-Drama`.
@@ -60,7 +60,7 @@ In Firebase Authentication aggiungi `fanta-drama.onrender.com` agli Authorized d
 
 Il bot usa il webhook `POST /api/telegram/webhook` sullo stesso servizio Render; non richiede un worker o un servizio aggiuntivo. Le variabili segrete `TELEGRAM_BOT_TOKEN` e `TELEGRAM_WEBHOOK_SECRET` restano solo in Render.
 
-Per mostrare il pulsante **Accedi con Telegram**, collega il dominio `fanta-drama.onrender.com` al bot tramite il comando `/setdomain` in [@BotFather](https://t.me/BotFather). Il backend verifica l'HMAC dei dati restituiti dal widget prima di generare un custom token Firebase.
+Il pulsante **Apri FantaDrama in Telegram** porta alla Mini App dentro Telegram. In [@BotFather](https://t.me/BotFather), configura `https://fanta-drama.onrender.com/telegram-miniapp` come URL della Main Mini App del bot. Il backend verifica l'HMAC di `Telegram.WebApp.initData` prima di generare un custom token Firebase.
 
 ## Sicurezza
 

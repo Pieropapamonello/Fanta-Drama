@@ -19,7 +19,7 @@ async function sendMessage(chatId: number | string, text: string) {
       chat_id: chatId,
       text,
       reply_markup: {
-        inline_keyboard: [[{ text: 'Apri FantaDrama', url: 'https://fanta-drama.onrender.com' }]]
+        inline_keyboard: [[{ text: 'Apri FantaDrama', web_app: { url: 'https://fanta-drama.onrender.com/telegram-miniapp' } }]]
       }
     })
   })

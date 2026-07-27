@@ -15,6 +15,7 @@ const telegramSchema = z.object({
   auth_date: z.string().regex(/^\d+$/),
   hash: z.string().regex(/^[a-f0-9]{64}$/i)
 }).strict()
+const telegramMiniAppSchema = z.object({ initData: z.string().min(1).max(8192) })
 
 function isValidTelegramLogin(data: z.infer<typeof telegramSchema>) {
   const token = process.env.TELEGRAM_BOT_TOKEN
@@ -29,6 +30,38 @@ function isValidTelegramLogin(data: z.infer<typeof telegramSchema>) {
   return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(data.hash.toLowerCase()))
 }
 
+function isValidTelegramMiniApp(initData: string) {
+  const token = process.env.TELEGRAM_BOT_TOKEN
+  if (!token) return null
+  const params = new URLSearchParams(initData)
+  const receivedHash = params.get('hash')
+  const authDate = Number(params.get('auth_date'))
+  const rawUser = params.get('user')
+  if (!receivedHash || !rawUser || !Number.isFinite(authDate) || Math.abs(Math.floor(Date.now() / 1000) - authDate) > 10 * 60) return null
+  params.delete('hash')
+  const checkString = [...params.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => `${key}=${value}`).join('\n')
+  const secret = crypto.createHmac('sha256', 'WebAppData').update(token).digest()
+  const expected = crypto.createHmac('sha256', secret).update(checkString).digest('hex')
+  if (receivedHash.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(receivedHash))) return null
+  try {
+    const user = JSON.parse(rawUser) as { id?: number, first_name?: string, last_name?: string, username?: string, photo_url?: string }
+    return user.id && user.first_name ? user : null
+  } catch { return null }
+}
+
+async function telegramCustomToken(user: { id: number, first_name: string, last_name?: string, username?: string, photo_url?: string }) {
+  const userId = `telegram_${user.id}`
+  const displayName = [user.first_name, user.last_name].filter(Boolean).join(' ')
+  try {
+    await firebaseAuth.getUser(userId)
+  } catch (error: any) {
+    if (error.code !== 'auth/user-not-found') throw error
+    await firebaseAuth.createUser({ uid: userId, displayName, photoURL: user.photo_url })
+  }
+  await db.collection('telegramLinks').doc(userId).set({ telegramUserId: String(user.id), username: user.username ?? null, chatId: String(user.id), updatedAt: new Date().toISOString() }, { merge: true })
+  return { customToken: await firebaseAuth.createCustomToken(userId, { provider: 'telegram' }), username: user.username ?? user.first_name }
+}
+
 router.post('/telegram', async (req, res) => {
   try {
     const data = telegramSchema.parse(req.body)
@@ -37,24 +70,20 @@ router.post('/telegram', async (req, res) => {
       return res.status(401).json({ error: 'invalid_telegram_login' })
     }
 
-    const userId = `telegram_${data.id}`
-    const displayName = [data.first_name, data.last_name].filter(Boolean).join(' ')
-    try {
-      await firebaseAuth.getUser(userId)
-    } catch (error: any) {
-      if (error.code !== 'auth/user-not-found') throw error
-      await firebaseAuth.createUser({ uid: userId, displayName, photoURL: data.photo_url })
-    }
-    await db.collection('telegramLinks').doc(userId).set({
-      telegramUserId: data.id,
-      username: data.username ?? null,
-      chatId: data.id,
-      updatedAt: new Date().toISOString()
-    }, { merge: true })
-    const customToken = await firebaseAuth.createCustomToken(userId, { provider: 'telegram' })
-    return res.json({ customToken, username: data.username ?? data.first_name })
+    return res.json(await telegramCustomToken({ id: Number(data.id), first_name: data.first_name, last_name: data.last_name, username: data.username, photo_url: data.photo_url }))
   } catch (error: any) {
     return res.status(400).json({ error: error.message ?? 'telegram_login_failed' })
+  }
+})
+
+router.post('/telegram-miniapp', async (req, res) => {
+  try {
+    const { initData } = telegramMiniAppSchema.parse(req.body)
+    const user = isValidTelegramMiniApp(initData)
+    if (!user) return res.status(401).json({ error: 'invalid_telegram_miniapp' })
+    return res.json(await telegramCustomToken({ id: user.id!, first_name: user.first_name!, last_name: user.last_name, username: user.username, photo_url: user.photo_url }))
+  } catch (error: any) {
+    return res.status(400).json({ error: error.message ?? 'telegram_miniapp_failed' })
   }
 })
 
