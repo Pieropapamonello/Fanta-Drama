@@ -4,7 +4,7 @@ export default function TelegramLoginButton() {
 
   return (
     <a
-      href={`https://t.me/${botUsername}?startapp`}
+      href={`https://t.me/${botUsername}?start=app`}
       className="btn mt-5 inline-flex w-full justify-center bg-sky-500 text-white"
     >
       Apri FantaDrama in Telegram
