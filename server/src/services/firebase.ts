@@ -3,9 +3,12 @@ import { getAuth } from 'firebase-admin/auth'
 import { getFirestore } from 'firebase-admin/firestore'
 
 const rawServiceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_JSON
+  ?? (process.env.FIREBASE_SERVICE_ACCOUNT_BASE64
+    ? Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, 'base64').toString('utf8')
+    : undefined)
 
 if (!rawServiceAccount) {
-  throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON is required')
+  throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON or FIREBASE_SERVICE_ACCOUNT_BASE64 is required')
 }
 
 let serviceAccount: Record<string, string>

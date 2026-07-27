@@ -14,7 +14,7 @@ Il backend serve anche i file compilati del frontend: non esistono un secondo se
 
 ## Dati Firestore
 
-Le collezioni usate sono `users`, `groups`, `characters`, `cards`, `events`, `predictions` e `scores`. Le regole Firestore negano l'accesso diretto dal browser: ogni operazione sui dati passa dall'API, che verifica il Firebase ID token dell'utente. La chiave di servizio resta esclusivamente nella variabile segreta Render `FIREBASE_SERVICE_ACCOUNT_JSON`.
+Le collezioni usate sono `users`, `groups`, `characters`, `cards`, `events`, `predictions` e `scores`. Le regole Firestore negano l'accesso diretto dal browser: ogni operazione sui dati passa dall'API, che verifica il Firebase ID token dell'utente. La chiave di servizio resta esclusivamente nella variabile segreta Render `FIREBASE_SERVICE_ACCOUNT_BASE64`.
 
 ## Sviluppo locale
 
@@ -33,7 +33,7 @@ In un secondo terminale:
 npm run dev:web
 ```
 
-Inserisci in `client/.env` la configurazione della Web App Firebase e in `server/.env` il JSON completo della chiave dell'account di servizio su una sola riga. I file `.env` non devono mai essere committati.
+Inserisci in `client/.env` la configurazione della Web App Firebase e in `server/.env` la chiave dell'account di servizio codificata Base64. I file `.env` non devono mai essere committati.
 
 ## Verifica
 
@@ -48,7 +48,7 @@ Health check: `/api/health`.
 
 Il file `render.yaml` descrive esclusivamente il servizio esistente `Fanta-Drama`. Prima del deploy servono queste variabili nell'ambiente Render:
 
-- `FIREBASE_SERVICE_ACCOUNT_JSON` (segreta, JSON completo dell'account di servizio);
+- `FIREBASE_SERVICE_ACCOUNT_BASE64` (segreta, JSON completo dell'account di servizio codificato Base64);
 - `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID`;
 - gli altri valori Firebase indicati in `render.yaml`;
 - `VITE_API_URL=/api`.
