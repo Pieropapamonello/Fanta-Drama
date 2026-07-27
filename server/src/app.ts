@@ -17,6 +17,7 @@ import path from 'path'
 const app = express()
 
 app.use(helmet({
+  crossOriginEmbedderPolicy: false,
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
