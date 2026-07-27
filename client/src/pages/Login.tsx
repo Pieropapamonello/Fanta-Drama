@@ -1,11 +1,17 @@
-import React from 'react'
+import React, { useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
 import api, { setAuthToken } from '../services/api'
 import { firebaseAuth } from '../services/firebase'
-import { signInWithEmailAndPassword } from 'firebase/auth'
+import { signInWithCustomToken, signInWithEmailAndPassword } from 'firebase/auth'
 import TelegramLoginButton from '../components/TelegramLoginButton'
+
+declare global {
+  interface Window {
+    Telegram?: { WebApp?: { initData: string, ready: () => void, expand: () => void } }
+  }
+}
 import { useNavigate } from 'react-router-dom'
 
 const schema = z.object({
@@ -16,6 +22,27 @@ const schema = z.object({
 export default function Login() {
   const { register, handleSubmit } = useForm({ resolver: zodResolver(schema) })
   const navigate = useNavigate()
+  useEffect(() => {
+    const completeMiniAppLogin = async () => {
+      const webApp = window.Telegram?.WebApp
+      if (!webApp?.initData) return
+      webApp.ready()
+      webApp.expand()
+      const response = await api.post('/auth/telegram-miniapp', { initData: webApp.initData })
+      const credential = await signInWithCustomToken(firebaseAuth, response.data.customToken)
+      const token = await credential.user.getIdToken()
+      localStorage.setItem('fd_token', token)
+      setAuthToken(token)
+      await api.post('/auth/bootstrap', { username: response.data.username })
+      navigate('/dashboard', { replace: true })
+    }
+    const script = document.createElement('script')
+    script.src = 'https://telegram.org/js/telegram-web-app.js?61'
+    script.async = true
+    script.onload = () => { completeMiniAppLogin().catch((error) => console.error('Telegram Mini App login failed', error)) }
+    document.head.appendChild(script)
+    return () => script.remove()
+  }, [navigate])
   const onSubmit = async (data: any) => {
     try {
       const credential = await signInWithEmailAndPassword(firebaseAuth, data.email, data.password)
