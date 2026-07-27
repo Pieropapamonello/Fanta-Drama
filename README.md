@@ -191,7 +191,8 @@ Usa Git Credential Manager o `gh auth login`; non inserire un token nell'URL del
 5. Render genera automaticamente `JWT_SECRET`, `JWT_REFRESH_SECRET` e la connection string del database.
 6. Dopo il primo deploy verifica `/api/health`, registrazione, login e refresh diretto di una rotta React.
 
-Il `preDeployCommand` applica soltanto migrazioni Prisma già versionate; non esegue il seed demo.
+Il build installa anche le dipendenze di sviluppo necessarie a TypeScript, mentre il
+`preDeployCommand` applica soltanto migrazioni Prisma già versionate e non esegue il seed demo.
 
 ## Checklist locale
 

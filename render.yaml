@@ -4,7 +4,7 @@ services:
     runtime: static
     plan: free
     branch: main
-    buildCommand: npm install && npm --workspace client run build
+    buildCommand: npm install --include=dev && npm --workspace client run build
     staticPublishPath: client/dist
     autoDeploy: true
     routes:
@@ -20,7 +20,7 @@ services:
     runtime: node
     plan: free
     branch: main
-    buildCommand: npm install && npm --workspace server run prisma:generate && npm --workspace server run build
+    buildCommand: npm install --include=dev && npm --workspace server run prisma:generate && npm --workspace server run build
     preDeployCommand: npm --workspace server run prisma:migrate
     startCommand: npm --workspace server run start
     healthCheckPath: /api/health
