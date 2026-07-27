@@ -8,91 +8,157 @@ datasource db {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  username     String   @unique
-  email        String   @unique
+  id           String        @id @default(cuid())
+  username     String        @unique
+  email        String        @unique
   passwordHash String
   avatar       String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
   groups       GroupMember[]
+  predictions  Prediction[]
+
+  @@index([createdAt])
 }
 
 model Group {
-  id          String @id @default(cuid())
+  id          String        @id @default(cuid())
   name        String
   description String?
-  code        String @unique
+  code        String        @unique
   image       String?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
   members     GroupMember[]
+  seasons     Season[]
+  events      Event[]
+  characters  Character[]
 }
 
 model GroupMember {
-  id        String @id @default(cuid())
-  user      User   @relation(fields: [userId], references: [id])
-  userId    String
-  group     Group  @relation(fields: [groupId], references: [id])
-  groupId   String
-  role      MemberRole @default(MEMBER)
-  joinedAt  DateTime @default(now())
+  id       String     @id @default(cuid())
+  user     User       @relation(fields: [userId], references: [id])
+  userId   String
+  group    Group      @relation(fields: [groupId], references: [id])
+  groupId  String
+  role     MemberRole @default(MEMBER)
+  joinedAt DateTime   @default(now())
+
+  @@unique([userId, groupId])
+  @@index([groupId, role])
 }
 
-enum MemberRole { ADMIN MEMBER }
+enum MemberRole {
+  ADMIN
+  MEMBER
+}
 
 model Season {
-  id        String @id @default(cuid())
-  name      String
-  start     DateTime
-  end       DateTime
-  group     Group  @relation(fields: [groupId], references: [id])
-  groupId   String
+  id      String   @id @default(cuid())
+  name    String
+  start   DateTime
+  end     DateTime
+  group   Group    @relation(fields: [groupId], references: [id])
+  groupId String
+
+  @@index([groupId, start])
 }
 
 model Event {
-  id        String @id @default(cuid())
-  title     String
-  startsAt  DateTime
-  endsAt    DateTime
-  group     Group @relation(fields: [groupId], references: [id])
-  groupId   String
+  id                 String       @id @default(cuid())
+  title              String
+  description        String?
+  startsAt           DateTime
+  endsAt             DateTime
+  group              Group        @relation(fields: [groupId], references: [id])
+  groupId            String
+  state              EventState   @default(DRAFT)
+  closePredictionsAt DateTime?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  predictions        Prediction[]
+
+  @@index([groupId, startsAt])
+  @@index([state, closePredictionsAt])
 }
 
 model Character {
-  id       String @id @default(cuid())
+  id       String  @id @default(cuid())
   name     String
   nickname String?
   image    String?
-  group    Group  @relation(fields: [groupId], references: [id])
+  group    Group   @relation(fields: [groupId], references: [id])
   groupId  String
+
+  @@index([groupId, name])
 }
 
 model DramaCard {
-  id        String @id @default(cuid())
-  title     String
+  id          String       @id @default(cuid())
+  title       String
   description String?
-  rarity    Rarity @default(COMMON)
-  type      ResponseType
-  basePoints Int
-  author    String?
-  createdAt DateTime @default(now())
+  rarity      Rarity       @default(COMMON)
+  type        ResponseType
+  basePoints  Int
+  author      String?
+  createdAt   DateTime     @default(now())
+  predictions Prediction[]
 }
 
-enum Rarity { COMMON UNCOMMON RARE EPIC LEGENDARY MYTHIC }
-enum ResponseType { YES_NO PICK_CHARACTER MULTI_CHOICE NUMBER RANGE TIME TEXT FIRST_ACTION ORDER }
+enum Rarity {
+  COMMON
+  UNCOMMON
+  RARE
+  EPIC
+  LEGENDARY
+  MYTHIC
+}
+
+enum ResponseType {
+  YES_NO
+  PICK_CHARACTER
+  MULTI_CHOICE
+  NUMBER
+  RANGE
+  TIME
+  TEXT
+  FIRST_ACTION
+  ORDER
+}
 
 model Prediction {
-  id        String @id @default(cuid())
-  user      User   @relation(fields: [userId], references: [id])
+  id        String     @id @default(cuid())
+  user      User       @relation(fields: [userId], references: [id])
   userId    String
-  event     Event  @relation(fields: [eventId], references: [id])
+  event     Event      @relation(fields: [eventId], references: [id])
   eventId   String
   credits   Int
+  card      DramaCard? @relation(fields: [cardId], references: [id])
+  cardId    String?
+  value     Json?
+  joker     Boolean    @default(false)
+  resolved  Boolean    @default(false)
+  points    Int?
+  createdAt DateTime   @default(now())
+
+  @@unique([userId, eventId, cardId])
+  @@index([eventId, userId])
+}
+
+model Score {
+  id        String   @id @default(cuid())
+  userId    String
+  eventId   String
+  points    Int
+  breakdown Json?
   createdAt DateTime @default(now())
+
+  @@unique([userId, eventId])
+  @@index([eventId, points])
 }
 
 model Vote {
-  id        String @id @default(cuid())
+  id        String   @id @default(cuid())
   userId    String
   reportId  String
   value     Boolean
@@ -106,24 +172,34 @@ model Badge {
 }
 
 model Notification {
-  id      String @id @default(cuid())
-  userId  String
-  message String
-  read    Boolean @default(false)
+  id        String   @id @default(cuid())
+  userId    String
+  message   String
+  read      Boolean  @default(false)
   createdAt DateTime @default(now())
 }
 
 model RefreshToken {
-  id        String @id @default(cuid())
+  id        String   @id @default(cuid())
   userId    String
   token     String
   createdAt DateTime @default(now())
 }
 
 model AuditLog {
-  id        String @id @default(cuid())
+  id        String   @id @default(cuid())
   action    String
   actorId   String?
   meta      Json?
   createdAt DateTime @default(now())
+}
+
+enum EventState {
+  DRAFT
+  PRONOSTICI_APERTI
+  PRONOSTICI_CHIUSI
+  LIVE
+  VERIFY_RESULTS
+  CONCLUDED
+  CANCELLED
 }

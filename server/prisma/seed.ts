@@ -1,16 +1,22 @@
 import { PrismaClient } from '@prisma/client'
+import bcrypt from 'bcrypt'
 
 const prisma = new PrismaClient()
 
 async function main() {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('The demo seed is disabled in production')
+  }
+
   console.log('Seeding database...')
+  const passwordHash = await bcrypt.hash('Demo1234', 12)
   const demoUser = await prisma.user.upsert({
     where: { email: 'demo@fantadrama.local' },
     update: {},
     create: {
       username: 'demo',
       email: 'demo@fantadrama.local',
-      passwordHash: 'DEMO_HASH'
+      passwordHash
     }
   })
 

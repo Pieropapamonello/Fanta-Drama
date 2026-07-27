@@ -10,6 +10,7 @@ import characters from './routes/characters'
 import cards from './routes/cards'
 import events from './routes/events'
 import predictions from './routes/predictions'
+import admin from './routes/admin'
 
 const app = express()
 
@@ -26,6 +27,7 @@ app.use('/api/characters', characters)
 app.use('/api/cards', cards)
 app.use('/api/events', events)
 app.use('/api/predictions', predictions)
+app.use('/api/admin', admin)
 
 app.use((err: any, _req: any, res: any, _next: any) => {
   console.error(err)

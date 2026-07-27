@@ -10,13 +10,18 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "concurrently \"npm:dev:web\" \"npm:dev:server\"",
+    "dev": "npm run dev:web",
     "dev:web": "npm --workspace client run dev",
     "dev:server": "npm --workspace server run dev",
-    "build": "npm --workspace client run build && npm --workspace server run build",
+    "build": "npm --workspace client run build && npm --workspace server run prisma:generate && npm --workspace server run build",
     "start": "npm --workspace server run start",
-    "lint": "echo \"Run linters in workspaces\"",
+    "lint": "npm run typecheck",
+    "typecheck": "npm --workspace client run typecheck && npm --workspace server run typecheck",
+    "test": "npm --workspaces --if-present run test",
     "format": "echo \"Format workspaces\""
+  },
+  "engines": {
+    "node": ">=22.12 <23"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^8.65.0",

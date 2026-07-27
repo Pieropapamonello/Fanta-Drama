@@ -17,7 +17,11 @@ jobs:
           node-version: 20
       - name: Install root deps
         run: npm ci
-      - name: Build client
-        run: npm --workspace client run build
-      - name: Typecheck server
-        run: npm --workspace server run build
+      - name: Generate Prisma client
+        run: npm --workspace server run prisma:generate
+      - name: Lint and type-check
+        run: npm run lint
+      - name: Test
+        run: npm test
+      - name: Build
+        run: npm run build
