@@ -5,6 +5,7 @@ import * as z from 'zod'
 import api, { setAuthToken } from '../services/api'
 import { firebaseAuth } from '../services/firebase'
 import { createUserWithEmailAndPassword } from 'firebase/auth'
+import TelegramLoginButton from '../components/TelegramLoginButton'
 import { useNavigate } from 'react-router-dom'
 
 const schema = z.object({
@@ -42,6 +43,8 @@ export default function Register() {
       <label className="block mb-2 mt-4">Conferma Password</label>
       <input type="password" {...register('confirm')} className="input" />
       <button className="btn mt-4">Crea account</button>
+      <div className="mt-6 border-t pt-4 text-center text-sm text-slate-600">oppure registrati senza email</div>
+      <TelegramLoginButton label="Registrati con Telegram" />
     </form>
   )
 }

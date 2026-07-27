@@ -37,8 +37,8 @@ export default function Login() {
       <label className="block mt-4 mb-2">Password</label>
       <input type="password" {...register('password')} className="input" />
       <button className="btn mt-4">Accedi</button>
-      <div className="mt-6 border-t pt-2 text-center text-sm text-slate-600">oppure</div>
-      <TelegramLoginButton />
+      <div className="mt-6 border-t pt-4 text-center text-sm text-slate-600">oppure accedi senza email</div>
+      <TelegramLoginButton label="Accedi o registrati con Telegram" />
     </form>
   )
 }
