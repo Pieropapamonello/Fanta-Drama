@@ -15,7 +15,16 @@ import path from 'path'
 
 const app = express()
 
-app.use(helmet())
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      connectSrc: ["'self'", 'https://identitytoolkit.googleapis.com', 'https://securetoken.googleapis.com', 'https://www.googleapis.com'],
+      imgSrc: ["'self'", 'data:', 'https:'],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https:']
+    }
+  }
+}))
 app.use(express.json())
 app.use(cors({ origin: process.env.CLIENT_URL || undefined }))
 app.use(rateLimit({ windowMs: 60 * 1000, max: 60 }))
