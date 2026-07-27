@@ -21,8 +21,7 @@ services:
     plan: free
     branch: main
     buildCommand: npm install --include=dev && npm --workspace server run prisma:generate && npm --workspace server run build
-    preDeployCommand: npm --workspace server run prisma:migrate
-    startCommand: npm --workspace server run start
+    startCommand: npm --workspace server run prisma:migrate && npm --workspace server run start
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:
