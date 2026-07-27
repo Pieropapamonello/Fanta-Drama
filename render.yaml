@@ -1,7 +1,55 @@
 services:
   - type: web
-    name: fanta-drama
-    env: python
+    name: fantadrama-web
+    env: static
+    buildCommand: "npm --workspace client install && npm --workspace client run build"
+    staticPublishPath: "client/dist"
+  - type: web
+    name: fantadrama-server
+    env: node
+    plan: starter
+    buildCommand: "npm --workspace server install && npm --workspace server run build"
+    startCommand: "npm --workspace server run start"
+    envVars:
+      - key: DATABASE_URL
+      - key: JWT_SECRET
+      - key: JWT_REFRESH_SECRET
+      - key: CLIENT_URL
+services:
+  - type: static
+    name: fantadrama-web
+    env: static
     plan: free
-    buildCommand: ""
-    startCommand: "gunicorn web:app --bind 0.0.0.0:$PORT"
+    branch: main
+    rootDir: apps/web
+    buildCommand: "npm install && npm run build"
+    staticPublishPath: dist
+    autoDeploy: true
+    envVars:
+      - key: VITE_FIREBASE_API_KEY
+      - key: VITE_FIREBASE_AUTH_DOMAIN
+      - key: VITE_FIREBASE_PROJECT_ID
+      - key: VITE_FIREBASE_STORAGE_BUCKET
+      - key: VITE_FIREBASE_MESSAGING_SENDER_ID
+      - key: VITE_FIREBASE_APP_ID
+      - key: VITE_FIREBASE_MEASUREMENT_ID
+      - key: VITE_TELEGRAM_LOGIN_BOT_USERNAME
+      - key: APP_URL
+
+  - type: web_service
+    name: fantadrama-bot
+    env: node
+    plan: free
+    branch: main
+    rootDir: apps/bot
+    buildCommand: "npm install && npm run build"
+    startCommand: "npm run start"
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+      - key: TELEGRAM_LOGIN_DOMAIN
+      - key: TELEGRAM_LOGIN_SECRET
+      - key: FIREBASE_SERVICE_ACCOUNT_KEY
+      - key: APP_URL
+      - key: NODE_ENV

@@ -1,5 +1,6 @@
 import os
 from flask import Flask, render_template, request, redirect, url_for, jsonify, session, flash
+from config import EVENT_TYPES
 from store import store, find_team_by_member
 import bot
 from telegram import Bot
@@ -26,9 +27,49 @@ start_bot()
 def index():
     if not session.get("authed"):
         return redirect(url_for("login"))
-    teams = list(store.data.get("teams", {}).values())
+    team_data = store.data.get("teams", {})
+    users = []
+    for user in store.data.get("users", {}).values():
+        team_name = "nessuna"
+        if user.get("team_id") and user["team_id"] in team_data:
+            team_name = team_data[user["team_id"]]["name"]
+        users.append({**user, "team_name": team_name})
+    teams = []
+    for uid, team in team_data.items():
+        owner = store.data.get("users", {}).get(team.get("owner"))
+        owner_name = owner["name"] if owner else f"Manager {team.get('owner')}"
+        teams.append({**team, "owner_name": owner_name, "owner_id": team.get("owner")})
     characters = store.data.get("character_points", {})
-    return render_template("index.html", teams=teams, characters=characters)
+    return render_template(
+        "index.html",
+        users=users,
+        teams=teams,
+        characters=characters,
+        event_types=EVENT_TYPES,
+    )
+
+
+@app.route("/profilo", methods=["POST"])
+def profilo():
+    if not session.get("authed"):
+        return redirect(url_for("login"))
+    user_id = request.form.get("user_id", "").strip()
+    display_name = request.form.get("display_name", "").strip()
+    if not user_id or not display_name:
+        flash("Inserisci un user id e un nome manager validi.", "danger")
+        return redirect(url_for("index"))
+    try:
+        uid = int(user_id)
+    except ValueError:
+        flash("User id deve essere un numero intero.", "danger")
+        return redirect(url_for("index"))
+    if store.get_user(uid):
+        store.update_user_name(uid, display_name)
+        flash("Profilo manager aggiornato.", "success")
+    else:
+        store.create_user(uid, display_name)
+        flash("Profilo manager creato.", "success")
+    return redirect(url_for("index"))
 
 
 @app.route("/crea_squadra", methods=["POST"])
@@ -42,7 +83,12 @@ def crea_squadra():
     except Exception:
         uid = -1
     if name and uid != -1:
+        if not store.get_user(uid):
+            store.create_user(uid, f"Manager {uid}")
         store.create_team(uid, name)
+        flash("Squadra creata.", "success")
+    else:
+        flash("Inserisci un nome squadra e un user id valido.", "danger")
     return redirect(url_for("index"))
 
 
@@ -50,9 +96,17 @@ def crea_squadra():
 def iscrivi():
     if not session.get("authed"):
         return redirect(url_for("login"))
-    user_id = int(request.form.get("user_id"))
+    try:
+        user_id = int(request.form.get("user_id"))
+    except (TypeError, ValueError):
+        flash("User id non valido.", "danger")
+        return redirect(url_for("index"))
     member = request.form.get("member", "").strip().title()
-    store.add_member_to_team(user_id, member)
+    if not member:
+        flash("Inserisci il nome del personaggio.", "danger")
+        return redirect(url_for("index"))
+    success = store.add_member_to_team(user_id, member)
+    flash("Personaggio iscritto alla squadra." if success else "Errore durante l'iscrizione: membro già in un'altra squadra, squadra piena o manager non valido.", "success" if success else "danger")
     return redirect(url_for("index"))
 
 
@@ -60,9 +114,14 @@ def iscrivi():
 def lascia():
     if not session.get("authed"):
         return redirect(url_for("login"))
-    user_id = int(request.form.get("user_id"))
+    try:
+        user_id = int(request.form.get("user_id"))
+    except (TypeError, ValueError):
+        flash("User id non valido.", "danger")
+        return redirect(url_for("index"))
     member = request.form.get("member", "").strip().title()
-    store.remove_member_from_team(user_id, member)
+    success = store.remove_member_from_team(user_id, member)
+    flash("Personaggio rimosso dalla squadra." if success else "Non risulta che il personaggio sia nella squadra.", "success" if success else "danger")
     return redirect(url_for("index"))
 
 
@@ -72,7 +131,11 @@ def evento():
         return redirect(url_for("login"))
     member = request.form.get("member", "").strip().title()
     event_type = request.form.get("event_type", "").strip().lower()
-    store.record_event(member, event_type)
+    points = store.record_event(member, event_type)
+    if points is None:
+        flash("Tipo evento non valido.", "danger")
+    else:
+        flash(f"Evento registrato: {member} +{points} pt.", "success")
     return redirect(url_for("index"))
 
 

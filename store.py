@@ -9,6 +9,7 @@ class DataStore:
     def __init__(self, path: str = DATA_FILE) -> None:
         self.path = Path(path)
         self.data = {
+            "users": {},
             "teams": {},
             "character_points": {member: 0 for member in FAMILY_MEMBERS},
             "round": 0,
@@ -23,6 +24,11 @@ class DataStore:
             except Exception:
                 pass
 
+        self.data.setdefault("users", {})
+        self.data.setdefault("teams", {})
+        self.data.setdefault("character_points", {member: 0 for member in FAMILY_MEMBERS})
+        self.data.setdefault("round", 0)
+
     def save(self) -> None:
         with open(self.path, "w", encoding="utf-8") as f:
             json.dump(self.data, f, ensure_ascii=False, indent=2)
@@ -30,8 +36,32 @@ class DataStore:
     def get_team(self, user_id: int) -> Optional[Dict]:
         return self.data["teams"].get(str(user_id))
 
+    def get_user(self, user_id: int) -> Optional[Dict]:
+        return self.data["users"].get(str(user_id))
+
+    def create_user(self, user_id: int, display_name: str) -> None:
+        uid = str(user_id)
+        team_id = uid if self.data["teams"].get(uid) else None
+        self.data["users"][uid] = {"id": uid, "name": display_name, "team_id": team_id}
+        self.save()
+
+    def update_user_name(self, user_id: int, display_name: str) -> None:
+        user = self.get_user(user_id)
+        if user:
+            user["name"] = display_name
+            self.save()
+
+    def get_user_team(self, user_id: int) -> Optional[Dict]:
+        return self.data["teams"].get(str(user_id))
+
     def create_team(self, user_id: int, team_name: str) -> None:
-        self.data["teams"][str(user_id)] = {"name": team_name, "members": [], "points": 0}
+        uid = str(user_id)
+        self.data["teams"][uid] = {"name": team_name, "members": [], "points": 0, "owner": uid}
+        user = self.get_user(user_id)
+        if not user:
+            self.data["users"][uid] = {"id": uid, "name": f"Giocatore {uid}", "team_id": uid}
+        else:
+            user["team_id"] = uid
         self.save()
 
     def add_member_to_team(self, user_id: int, member: str) -> bool:

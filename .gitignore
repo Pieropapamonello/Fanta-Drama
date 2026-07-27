@@ -1,39 +1,68 @@
+node_modules/
+/.pnp
+.DS_Store
+dist/
+build/
+.env
+.env.local
+.env.*.local
+/.idea
+.vscode
+coverage/
+/.turbo
+prisma/dev.db
+server/node_modules/
+client/node_modules/
+packages/**/node_modules/
+# Node
+node_modules/
+**/node_modules/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+package-lock.json
+
+# Build output
+dist/
+build/
+apps/web/dist/
+apps/bot/dist/
+.cache/
+
+# Local environment
+.env
+.env.*
+.local
+.vscode/
+.idea/
+
+# Firebase
+firebase-debug.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Secrets
+*.pem
+*.key
+secrets.*
+
+# Render
+*.render.yaml
+
+# Generated
+*.tgz
+.coverage
+
+# Python leftovers
 __pycache__/
 *.py[cod]
-
 .venv/
 venv/
 env/
 ENV/
-
-.env
-.env.*
-
-.vscode/
-.idea/
-*.sublime-project
-*.sublime-workspace
-
-*.log
-logs/
-scripts/*.log
-
-data.json
-*.sqlite3
-*.db
-
-dist/
-build/
-*.egg-info/
-
-.DS_Store
-Thumbs.db
-
-secrets.*
-*.pem
-*.key
-
-.coverage
-
-.python-version
-Pipfile.lock

@@ -127,22 +127,33 @@
         <a class="logout" href="/logout">Logout</a>
       </header>
 
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="card" style="border-color:#c7d2fe; background:#eff6ff;">
+            {% for category, message in messages %}
+              <p class="status" style="color: {{ 'green' if category == 'success' else '#b91c1c' }}; margin: 0.4rem 0;">{{ message }}</p>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+
       <div class="grid columns-2" style="margin-top:1rem;">
+        <section class="card">
+          <h2>Profilo manager</h2>
+          <form action="/profilo" method="post">
+            <input name="user_id" placeholder="User id manager" required>
+            <input name="display_name" placeholder="Nome manager" required>
+            <button type="submit">Salva profilo</button>
+          </form>
+          <p class="status">Usa l'user id per collegare squadre e membri al tuo profilo.</p>
+        </section>
+
         <section class="card">
           <h2>Crea squadra</h2>
           <form action="/crea_squadra" method="post">
             <input name="name" placeholder="Nome squadra" required>
-            <input name="user_id" placeholder="Tuo user id (es. Telegram id)" required>
+            <input name="user_id" placeholder="User id manager" required>
             <button type="submit">Crea squadra</button>
-          </form>
-        </section>
-
-        <section class="card">
-          <h2>Registra evento</h2>
-          <form action="/evento" method="post">
-            <input name="member" placeholder="Nome personaggio" required>
-            <input name="event_type" placeholder="Tipo evento (es. lite, gossip)" required>
-            <button type="submit">Registra evento</button>
           </form>
         </section>
       </div>
@@ -155,6 +166,7 @@
               <thead>
                 <tr>
                   <th>Squadra</th>
+                  <th>Manager</th>
                   <th>Punti</th>
                   <th>Membri</th>
                 </tr>
@@ -163,6 +175,7 @@
                 {% for t in teams %}
                 <tr>
                   <td>{{ t.name }}</td>
+                  <td>{{ t.owner_name }}</td>
                   <td>{{ t.points }}</td>
                   <td>{{ t.members | join(', ') or 'nessuno' }}</td>
                 </tr>
@@ -196,6 +209,63 @@
           {% else %}
             <p class="status">Nessun dato ancora disponibile.</p>
           {% endif %}
+        </section>
+      </div>
+
+      <div class="grid columns-2" style="margin-top:1rem;">
+        <section class="card">
+          <h2>Iscrivi personaggio</h2>
+          <form action="/iscrivi" method="post">
+            <input name="user_id" placeholder="User id manager" required>
+            <input name="member" placeholder="Nome personaggio" required>
+            <button type="submit">Iscrivi</button>
+          </form>
+        </section>
+
+        <section class="card">
+          <h2>Rimuovi personaggio</h2>
+          <form action="/lascia" method="post">
+            <input name="user_id" placeholder="User id manager" required>
+            <input name="member" placeholder="Nome personaggio" required>
+            <button type="submit">Rimuovi</button>
+          </form>
+        </section>
+      </div>
+
+      <div class="grid columns-2" style="margin-top:1rem;">
+        <section class="card">
+          <h2>Manager registrati</h2>
+          {% if users %}
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>User id</th>
+                  <th>Nome manager</th>
+                  <th>Squadra</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for user in users %}
+                <tr>
+                  <td>{{ user.id }}</td>
+                  <td>{{ user.name }}</td>
+                  <td>{{ user.team_name }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% else %}
+            <p class="status">Nessun manager registrato.</p>
+          {% endif %}
+        </section>
+
+        <section class="card">
+          <h2>Tipi di evento</h2>
+          <ul style="margin:0; padding-left:1.2rem; color:#334155;">
+            {% for event, points in event_types.items() %}
+            <li><strong>{{ event }}</strong>: +{{ points }} pt</li>
+            {% endfor %}
+          </ul>
         </section>
       </div>
 
