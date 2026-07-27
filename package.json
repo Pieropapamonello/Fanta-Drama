@@ -13,7 +13,7 @@
     "dev": "npm run dev:web",
     "dev:web": "npm --workspace client run dev",
     "dev:server": "npm --workspace server run dev",
-    "build": "npm --workspace client run build && npm --workspace server run prisma:generate && npm --workspace server run build",
+    "build": "npm --workspace client run build && npm --workspace server run build",
     "start": "npm --workspace server run start",
     "lint": "npm run typecheck",
     "typecheck": "npm --workspace client run typecheck && npm --workspace server run typecheck",

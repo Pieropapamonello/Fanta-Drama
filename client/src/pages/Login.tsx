@@ -3,6 +3,8 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
 import api, { setAuthToken } from '../services/api'
+import { firebaseAuth } from '../services/firebase'
+import { signInWithEmailAndPassword } from 'firebase/auth'
 import { useNavigate } from 'react-router-dom'
 
 const schema = z.object({
@@ -15,8 +17,9 @@ export default function Login() {
   const navigate = useNavigate()
   const onSubmit = async (data: any) => {
     try {
-      const res = await api.post('/auth/login', data)
-      const token = res.data.token
+      const credential = await signInWithEmailAndPassword(firebaseAuth, data.email, data.password)
+      const token = await credential.user.getIdToken()
+      await api.post('/auth/bootstrap')
       localStorage.setItem('fd_token', token)
       setAuthToken(token)
       navigate('/dashboard')

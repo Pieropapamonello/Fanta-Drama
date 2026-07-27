@@ -1,15 +1,13 @@
 import { Router } from 'express'
 import { requireAuth, AuthRequest } from '../middleware/auth'
-import { PrismaClient } from '@prisma/client'
+import { db, documentData } from '../services/firebase'
 
-const prisma = new PrismaClient()
 const router = Router()
 
 router.get('/me', requireAuth, async (req: AuthRequest, res) => {
-  const userId = req.userId!
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, username: true, email: true, avatar: true, createdAt: true } })
-  if (!user) return res.status(404).json({ error: 'not_found' })
-  res.json({ user })
+  const snapshot = await db.collection('users').doc(req.userId!).get()
+  if (!snapshot.exists) return res.status(404).json({ error: 'not_found' })
+  return res.json({ user: documentData(snapshot.id, snapshot.data() as Record<string, unknown>) })
 })
 
 export default router

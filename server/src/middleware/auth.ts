@@ -1,19 +1,18 @@
 import { Request, Response, NextFunction } from 'express'
-import jwt from 'jsonwebtoken'
-import { getJwtSecret } from '../config/auth'
+import { firebaseAuth } from '../services/firebase'
 
 export interface AuthRequest extends Request {
   userId?: string
 }
 
-export function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
+export async function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
   const auth = req.headers.authorization
   if (!auth) return res.status(401).json({ error: 'missing_token' })
-  const token = auth.split(' ')[1]
+  const [scheme, token] = auth.split(' ')
+  if (scheme !== 'Bearer' || !token) return res.status(401).json({ error: 'invalid_token' })
   try {
-    const payload = jwt.verify(token, getJwtSecret()) as { userId?: string }
-    if (!payload.userId) return res.status(401).json({ error: 'invalid_token' })
-    req.userId = payload.userId
+    const payload = await firebaseAuth.verifyIdToken(token)
+    req.userId = payload.uid
     next()
   } catch (err) {
     return res.status(401).json({ error: 'invalid_token' })

@@ -1,33 +1,35 @@
 import { Router } from 'express'
-import { requireAuth, AuthRequest } from '../middleware/auth'
-import { PrismaClient } from '@prisma/client'
 import { z } from 'zod'
+import { requireAuth, AuthRequest } from '../middleware/auth'
+import { db, documentData } from '../services/firebase'
 
-const prisma = new PrismaClient()
 const router = Router()
-
-const createSchema = z.object({ title: z.string().min(1), description: z.string().optional(), rarity: z.string().optional(), type: z.string().optional(), basePoints: z.number().optional() })
+const schema = z.object({
+  title: z.string().trim().min(1).max(100), description: z.string().trim().max(500).optional(),
+  rarity: z.enum(['COMMON', 'UNCOMMON', 'RARE', 'EPIC', 'LEGENDARY', 'MYTHIC']).optional(),
+  type: z.enum(['YES_NO', 'PICK_CHARACTER', 'MULTI_CHOICE', 'NUMBER', 'RANGE', 'TIME', 'TEXT', 'FIRST_ACTION', 'ORDER']).optional(),
+  basePoints: z.number().int().min(0).max(100).optional()
+})
 
 router.post('/', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const data = createSchema.parse(req.body)
-    const card = await prisma.dramaCard.create({ data: { title: data.title, description: data.description, rarity: (data.rarity as any) || 'COMMON', type: (data.type as any) || 'YES_NO', basePoints: data.basePoints || 5, author: req.userId } })
-    res.json({ card })
-  } catch (err: any) {
-    res.status(400).json({ error: err.message })
-  }
+    const data = schema.parse(req.body)
+    const ref = db.collection('cards').doc()
+    const card = { ...data, description: data.description ?? '', rarity: data.rarity ?? 'COMMON', type: data.type ?? 'YES_NO', basePoints: data.basePoints ?? 5, authorId: req.userId!, createdAt: new Date().toISOString() }
+    await ref.set(card)
+    return res.status(201).json({ card: documentData(ref.id, card) })
+  } catch (error: any) { return res.status(400).json({ error: error.message ?? 'invalid_card' }) }
 })
 
 router.get('/', requireAuth, async (_req, res) => {
-  const cards = await prisma.dramaCard.findMany({ orderBy: { createdAt: 'desc' } })
-  res.json({ cards })
+  const snapshot = await db.collection('cards').orderBy('createdAt', 'desc').get()
+  return res.json({ cards: snapshot.docs.map((doc) => documentData(doc.id, doc.data() as Record<string, unknown>)) })
 })
 
 router.get('/:id', requireAuth, async (req, res) => {
-  const id = req.params.id
-  const card = await prisma.dramaCard.findUnique({ where: { id } })
-  if (!card) return res.status(404).json({ error: 'not_found' })
-  res.json({ card })
+  const snapshot = await db.collection('cards').doc(req.params.id).get()
+  if (!snapshot.exists) return res.status(404).json({ error: 'not_found' })
+  return res.json({ card: documentData(snapshot.id, snapshot.data() as Record<string, unknown>) })
 })
 
 export default router

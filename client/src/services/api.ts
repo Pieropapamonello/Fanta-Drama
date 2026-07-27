@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { firebaseAuth } from './firebase'
 
 const api = axios.create({ baseURL: import.meta.env.VITE_API_URL || 'http://localhost:4000/api' })
 
@@ -9,6 +10,12 @@ export function setAuthToken(token: string | null) {
 
 const storedToken = localStorage.getItem('fd_token')
 setAuthToken(storedToken)
+
+api.interceptors.request.use(async (config) => {
+  const user = firebaseAuth.currentUser
+  if (user) config.headers.Authorization = `Bearer ${await user.getIdToken()}`
+  return config
+})
 
 api.interceptors.response.use(
   (response) => response,

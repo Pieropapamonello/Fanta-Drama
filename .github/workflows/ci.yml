@@ -14,11 +14,9 @@ jobs:
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - name: Install root deps
         run: npm ci
-      - name: Generate Prisma client
-        run: npm --workspace server run prisma:generate
       - name: Lint and type-check
         run: npm run lint
       - name: Test

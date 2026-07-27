@@ -11,12 +11,13 @@ import cards from './routes/cards'
 import events from './routes/events'
 import predictions from './routes/predictions'
 import admin from './routes/admin'
+import path from 'path'
 
 const app = express()
 
 app.use(helmet())
 app.use(express.json())
-app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:5173' }))
+app.use(cors({ origin: process.env.CLIENT_URL || undefined }))
 app.use(rateLimit({ windowMs: 60 * 1000, max: 60 }))
 
 app.use('/api/health', health)
@@ -28,6 +29,10 @@ app.use('/api/cards', cards)
 app.use('/api/events', events)
 app.use('/api/predictions', predictions)
 app.use('/api/admin', admin)
+
+const clientDist = path.resolve(__dirname, '../../client/dist')
+app.use(express.static(clientDist))
+app.get('*', (_req, res) => res.sendFile(path.join(clientDist, 'index.html')))
 
 app.use((err: any, _req: any, res: any, _next: any) => {
   console.error(err)
