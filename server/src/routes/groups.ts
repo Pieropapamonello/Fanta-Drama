@@ -63,4 +63,27 @@ router.get('/:id', requireAuth, async (req: AuthRequest, res) => {
   return res.json({ group: documentData(snapshot.id, snapshot.data() as Record<string, unknown>) })
 })
 
+router.delete('/:id', requireAuth, async (req: AuthRequest, res) => {
+  const groupRef = db.collection('groups').doc(req.params.id)
+  const group = await groupRef.get()
+  if (!group.exists) return res.status(404).json({ error: 'not_found' })
+  if (group.data()?.memberRoles?.[req.userId!] !== 'ADMIN') return res.status(403).json({ error: 'admin_required' })
+
+  const [characters, events] = await Promise.all([
+    db.collection('characters').where('groupId', '==', group.id).get(),
+    db.collection('events').where('groupId', '==', group.id).get()
+  ])
+  const eventIds = events.docs.map((event) => event.id)
+  const relatedPredictions = await Promise.all(eventIds.map((eventId) => db.collection('predictions').where('eventId', '==', eventId).get()))
+  const relatedScores = await Promise.all(eventIds.map((eventId) => db.collection('scores').where('eventId', '==', eventId).get()))
+  const refs = [groupRef, ...characters.docs.map((doc) => doc.ref), ...events.docs.map((doc) => doc.ref), ...relatedPredictions.flatMap((snapshot) => snapshot.docs.map((doc) => doc.ref)), ...relatedScores.flatMap((snapshot) => snapshot.docs.map((doc) => doc.ref))]
+
+  while (refs.length) {
+    const batch = db.batch()
+    refs.splice(0, 450).forEach((ref) => batch.delete(ref))
+    await batch.commit()
+  }
+  return res.json({ ok: true })
+})
+
 export default router

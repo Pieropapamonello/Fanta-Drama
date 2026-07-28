@@ -61,6 +61,7 @@ h2 { color: #fff; letter-spacing: -.045em; }
 }
 .btn:hover { transform: translateY(-2px); filter: brightness(1.08); box-shadow:0 14px 32px rgba(101,74,255,.42); }
 .btn:active { transform: translateY(0); }
+.btn:disabled { cursor: wait; opacity: .62; transform: none; box-shadow: none; }
 .btn-ghost { color:#d8d3f5; border:1px solid rgba(198,188,255,.27); background:rgba(255,255,255,.045); box-shadow:none; }
 .btn-ghost:hover { background:rgba(154,119,255,.14); }
 
