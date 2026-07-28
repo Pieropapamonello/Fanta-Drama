@@ -50,7 +50,7 @@ export default function ProfileSetup() {
   }, [reset])
 
   useEffect(() => {
-    void api.get('/assets/starter-avatars').then((response) => setExtraAvatars((response.data.avatars || []).filter((item: any) => !item.imageUrl).map((item: any) => ({ ...item, value: `starter:${item.slug}` })))).catch(() => undefined)
+    void api.get('/assets/starter-avatars').then((response) => setExtraAvatars((response.data.avatars || []).filter((item: any) => !['on-fire', 'intrigo', 'plot-twist', 'in-controllo', 'violet-vibe', 'night-pulse'].includes(item.slug)).map((item: any) => ({ ...item, value: item.imageUrl || `starter:${item.slug}` })))).catch(() => undefined)
   }, [])
 
   const chooseAvatar = async (item: any) => {
