@@ -53,10 +53,22 @@ async function dropboxRequest(endpoint: string, accessToken: string, body: unkno
   })
 }
 
+async function ensureDropboxFolder(accessToken: string, path: string) {
+  let current = ''
+  for (const part of path.split('/').filter(Boolean)) {
+    current += `/${part}`
+    const response = await dropboxRequest('files/create_folder_v2', accessToken, { path: current, autorename: false })
+    // 409 is the normal response when a previous upload has already created the folder.
+    if (!response.ok && response.status !== 409) throw new Error(`dropbox_folder_create_failed_${response.status}`)
+  }
+}
+
 async function saveToDropbox(userId: string, kind: AssetKind, buffer: Buffer, contentType: string) {
   const accessToken = process.env.DROPBOX_ACCESS_TOKEN?.trim()
   if (!accessToken) throw new Error('dropbox_storage_not_configured')
-  const path = `${dropboxAssetFolder()}/${kind.toLowerCase()}/${userId}/${crypto.randomUUID()}.${extensionFor(contentType)}`
+  const folder = `${dropboxAssetFolder()}/${kind.toLowerCase()}/${userId}`
+  await ensureDropboxFolder(accessToken, folder)
+  const path = `${folder}/${crypto.randomUUID()}.${extensionFor(contentType)}`
   const upload = await fetch('https://content.dropboxapi.com/2/files/upload', {
     method: 'POST',
     headers: {
