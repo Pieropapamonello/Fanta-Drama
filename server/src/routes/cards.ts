@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { requireAuth, AuthRequest } from '../middleware/auth'
 import { db, documentData } from '../services/firebase'
+import { CARD_LIBRARY, cardBySlug } from '../data/cardLibrary'
 
 const router = Router()
 const schema = z.object({
@@ -19,6 +20,20 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
     await ref.set(card)
     return res.status(201).json({ card: documentData(ref.id, card) })
   } catch (error: any) { return res.status(400).json({ error: error.message ?? 'invalid_card' }) }
+})
+
+router.get('/library', requireAuth, async (_req, res) => res.json({ cards: CARD_LIBRARY }))
+
+router.post('/library/:slug', requireAuth, async (req: AuthRequest, res) => {
+  const template = cardBySlug(req.params.slug)
+  if (!template) return res.status(404).json({ error: 'library_card_not_found' })
+  const existing = await db.collection('cards').where('authorId', '==', req.userId!).get()
+  const duplicate = existing.docs.find((doc) => doc.data().librarySlug === template.slug)
+  if (duplicate) return res.status(200).json({ card: documentData(duplicate.id, duplicate.data() as Record<string, unknown>), alreadyAdded: true })
+  const ref = db.collection('cards').doc()
+  const card = { ...template, librarySlug: template.slug, authorId: req.userId!, createdAt: new Date().toISOString() }
+  await ref.set(card)
+  return res.status(201).json({ card: documentData(ref.id, card) })
 })
 
 router.get('/', requireAuth, async (_req, res) => {
