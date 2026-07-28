@@ -59,7 +59,11 @@ async function ensureDropboxFolder(accessToken: string, path: string) {
     current += `/${part}`
     const response = await dropboxRequest('files/create_folder_v2', accessToken, { path: current, autorename: false })
     // 409 is the normal response when a previous upload has already created the folder.
-    if (!response.ok && response.status !== 409) throw new Error(`dropbox_folder_create_failed_${response.status}`)
+    if (!response.ok && response.status !== 409) {
+      const payload = await response.json().catch(() => null) as { error_summary?: string } | null
+      const reason = payload?.error_summary?.split('/')[0]?.replace(/[^a-z0-9_-]/gi, '') || 'unknown'
+      throw new Error(`dropbox_folder_create_failed_${response.status}_${reason}`)
+    }
   }
 }
 
