@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { signInWithCustomToken } from 'firebase/auth'
 import api, { setAuthToken } from '../services/api'
@@ -13,17 +13,20 @@ declare global {
 export default function TelegramMiniApp() {
   const navigate = useNavigate()
   const [message, setMessage] = useState('Connessione sicura a Telegram…')
+  const attempted = useRef(false)
 
   useEffect(() => {
-    const script = document.createElement('script')
-    script.src = 'https://telegram.org/js/telegram-web-app.js?61'
-    script.async = true
-    script.onload = async () => {
+    const completeLogin = async () => {
+      if (attempted.current) return
+      const webApp = window.Telegram?.WebApp
+      if (!webApp?.initData) {
+        setMessage('Apri FantaDrama dal pulsante “Apri FantaDrama” nel bot Telegram.')
+        return
+      }
+      attempted.current = true
+      webApp.ready()
+      webApp.expand()
       try {
-        const webApp = window.Telegram?.WebApp
-        if (!webApp?.initData) throw new Error('Apri FantaDrama dal bot Telegram')
-        webApp.ready()
-        webApp.expand()
         const response = await api.post('/auth/telegram-miniapp', { initData: webApp.initData })
         const credential = await signInWithCustomToken(firebaseAuth, response.data.customToken)
         const token = await credential.user.getIdToken()
@@ -32,12 +35,25 @@ export default function TelegramMiniApp() {
         await api.post('/auth/bootstrap', { username: response.data.username })
         navigate('/dashboard', { replace: true })
       } catch (error: any) {
-        setMessage(error.message || 'Impossibile accedere tramite Telegram.')
+        attempted.current = false
+        const code = error.response?.data?.error
+        setMessage(code === 'invalid_telegram_miniapp'
+          ? 'La verifica Telegram non è riuscita. Chiudi questa schermata e riapri FantaDrama dal bot.'
+          : 'Non riesco a completare l’accesso. Riprova tra qualche secondo dal pulsante del bot.')
       }
     }
+
+    if (window.Telegram?.WebApp) {
+      void completeLogin()
+      return
+    }
+    const script = document.createElement('script')
+    script.src = 'https://telegram.org/js/telegram-web-app.js?61'
+    script.async = true
+    script.onload = () => { void completeLogin() }
     document.head.appendChild(script)
     return () => script.remove()
   }, [navigate])
 
-  return <p className="py-10 text-center">{message}</p>
+  return <div className="telegram-gate"><span className="telegram-gate-orb" aria-hidden="true" /><p>{message}</p></div>
 }
