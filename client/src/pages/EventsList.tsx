@@ -7,19 +7,16 @@ export default function EventsList() {
   useEffect(() => { api.get('/events').then(r => setEvents(r.data.events)).catch(() => {}) }, [])
   return (
     <div>
-      <h2 className="text-2xl mb-4">Eventi</h2>
-      <div className="space-y-2">
+      <div className="page-heading"><div><p className="eyebrow">Il prossimo capitolo</p><h2>Eventi</h2></div><Link to="/events/create" className="btn">+ Crea evento</Link></div>
+      <div className="collection-grid">
         {events.map(e => (
-          <div key={e.id} className="p-3 border rounded">
-            <h3 className="font-semibold">{e.title}</h3>
-            <p className="text-sm">{e.description}</p>
-            <Link to={`/events/${e.id}`} className="text-indigo-600">Apri</Link>
+          <div key={e.id} className="game-card">
+            <span className="eyebrow">{e.state || 'IN ARRIVO'}</span><h3>{e.title}</h3><p>{e.description || 'Preparati: può succedere di tutto.'}</p>
+            <Link to={`/events/${e.id}`}>Apri evento →</Link>
           </div>
         ))}
       </div>
-      <div className="mt-4">
-        <Link to="/events/create" className="btn">Crea evento</Link>
-      </div>
+      {!events.length && <div className="empty-state">Qui compariranno le prossime sfide del tuo gruppo.</div>}
     </div>
   )
 }
