@@ -31,6 +31,8 @@ export default function ProfileSetup() {
   const [contactMessage, setContactMessage] = useState('')
   const [isLinkingEmail, setIsLinkingEmail] = useState(false)
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
+  const [extraAvatars, setExtraAvatars] = useState<any[]>([])
+  const [generatingAvatar, setGeneratingAvatar] = useState('')
   const avatar = watch('avatar')
   const notificationPreference = watch('notificationPreference')
 
@@ -46,6 +48,20 @@ export default function ProfileSetup() {
   useEffect(() => {
     void loadProfile().finally(() => setIsLoading(false))
   }, [reset])
+
+  useEffect(() => {
+    void api.get('/assets/starter-avatars').then((response) => setExtraAvatars((response.data.avatars || []).filter((item: any) => !item.imageUrl).map((item: any) => ({ ...item, value: `starter:${item.slug}` })))).catch(() => undefined)
+  }, [])
+
+  const chooseAvatar = async (item: any) => {
+    if (!item.value.startsWith('starter:')) { setValue('avatar', item.value, { shouldValidate: true }); return }
+    setGeneratingAvatar(item.slug); setContactMessage('Genero il tuo avatar unico con IA…')
+    try {
+      const response = await api.post(`/assets/starter-avatar/${item.slug}`)
+      setExtraAvatars((current) => current.map((candidate) => candidate.slug === item.slug ? { ...candidate, value: response.data.imageUrl } : candidate))
+      setValue('avatar', response.data.imageUrl, { shouldValidate: true }); setContactMessage('Avatar pronto.')
+    } catch { setContactMessage('Non riesco a generare questo avatar ora. Riprova tra poco.') } finally { setGeneratingAvatar('') }
+  }
 
   const connectEmail = async () => {
     if (!email || emailPassword.length < 8) { setContactMessage('Inserisci un’e-mail valida e una password di almeno 8 caratteri.'); return }
@@ -98,8 +114,8 @@ export default function ProfileSetup() {
   return <form className="profile-setup" onSubmit={handleSubmit(onSubmit)}>
     <div className="profile-setup-copy"><p className="eyebrow">Il tuo alter ego</p><h2>Crea il tuo personaggio</h2><p>Queste informazioni saranno visibili solo nella tua esperienza FantaDrama. Puoi modificarle quando vuoi.</p></div>
     <section><div className="profile-section-title"><Sparkles size={17} /><div><strong>Scegli il tuo avatar</strong><span>Il tuo mood nella drama room</span></div></div><div className="avatar-picker">
-      {avatars.map((item) => <button type="button" key={item.value} className={`avatar-choice ${avatar === item.value ? 'is-selected' : ''}`} onClick={() => setValue('avatar', item.value, { shouldValidate: true })}>
-        <img src={item.value} alt="" /><span><b>{item.title}</b><small>{item.note}</small></span>{avatar === item.value && <i><Check size={13} /></i>}
+      {[...avatars, ...extraAvatars].map((item: any) => <button type="button" key={item.slug || item.value} className={`avatar-choice ${avatar === item.value ? 'is-selected' : ''}`} onClick={() => void chooseAvatar(item)} disabled={Boolean(generatingAvatar)}>
+        {item.value.startsWith('starter:') ? <div className="avatar-art-placeholder">{item.title.slice(0, 1)}</div> : <img src={item.value} alt="" />}<span><b>{generatingAvatar === item.slug ? 'Genero…' : item.title}</b><small>{item.note}</small></span>{avatar === item.value && <i><Check size={13} /></i>}
       </button>)}
     </div>{!avatars.some((item) => item.value === avatar) && <div className="custom-avatar-preview"><img src={avatar} alt="Avatar personale" /><span>Avatar personale selezionato</span></div>}<ImageForge kind="AVATAR" imageUrl={!avatars.some((item) => item.value === avatar) ? avatar : undefined} onChange={(url) => setValue('avatar', url)} /><label className="avatar-upload">Oppure carica una tua immagine <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void uploadAvatar(event.target.files?.[0])} disabled={isUploadingAvatar} /><small>{isUploadingAvatar ? 'Caricamento avatar…' : 'PNG, JPG o WebP · massimo 2,5 MB'}</small></label></section>
     <section className="profile-fields"><label>Nickname in app<input className="input" {...register('username', { required: true, minLength: 3, maxLength: 30 })} placeholder="Come ti chiama la crew?" /></label><label>Ruolo nella crew<select className="input" {...register('crewRole')}><option>Jolly</option><option>Stratega</option><option>Creatore di caos</option><option>Osservatore</option><option>Regista del drama</option></select></label><label>Bio <small>opzionale</small><textarea className="input profile-textarea" {...register('bio', { maxLength: 160 })} maxLength={160} placeholder="Una frase che racconta il tuo stile…" /></label><label><MapPin size={14} /> Città <small>opzionale</small><input className="input" {...register('city', { maxLength: 48 })} maxLength={48} placeholder="Es. Roma" /></label><label className="profile-motto">Il tuo motto <small>opzionale</small><input className="input" {...register('motto', { maxLength: 90 })} maxLength={90} placeholder="Es. Il drama mi trova sempre." /></label></section>

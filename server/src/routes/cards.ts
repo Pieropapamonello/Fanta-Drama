@@ -2,6 +2,8 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { requireAuth, AuthRequest } from '../middleware/auth'
 import { db, documentData } from '../services/firebase'
+import { generateSharedStarterAsset } from '../services/assets'
+import { starterCards } from '../data/starter-content'
 
 const router = Router()
 const schema = z.object({
@@ -10,19 +12,6 @@ const schema = z.object({
   type: z.enum(['YES_NO', 'PICK_CHARACTER', 'MULTI_CHOICE', 'NUMBER', 'RANGE', 'TIME', 'TEXT', 'FIRST_ACTION', 'ORDER']).optional(),
   basePoints: z.number().int().min(0).max(100).optional(), imageUrl: z.string().url().max(2048)
 })
-
-const STARTER_CARDS = [
-  { slug: 'microfono-cristallo', title: 'Microfono di Cristallo', description: 'Pronostica chi conquistera il karaoke con una nota impossibile da dimenticare.', rarity: 'UNCOMMON', type: 'YES_NO', basePoints: 25, imageUrl: '/cards/secret-stage.png' },
-  { slug: 'invito-fantasma', title: 'Invito Fantasma', description: 'Indovina se un ospite inatteso comparira quando il gruppo abbassa la guardia.', rarity: 'RARE', type: 'YES_NO', basePoints: 35, imageUrl: '/cards/velvet-secret.png' },
-  { slug: 'disco-sospetta', title: 'Disco Sospetta', description: 'Pronostica se la pista da ballo esplodera nel momento meno opportuno.', rarity: 'EPIC', type: 'YES_NO', basePoints: 50, imageUrl: '/cards/disco-twist.png' },
-  { slug: 'torta-gravita-zero', title: 'Torta a Gravita Zero', description: 'Scegli se il dolce resistera fino al brindisi finale senza incidenti.', rarity: 'UNCOMMON', type: 'YES_NO', basePoints: 20, imageUrl: '/cards/cake-chaos.png' },
-  { slug: 'risata-proibita', title: 'Risata Proibita', description: 'Indovina chi ridera proprio nel silenzio piu importante della serata.', rarity: 'COMMON', type: 'YES_NO', basePoints: 15, imageUrl: '/characters/mischief.png' },
-  { slug: 'sorpresa-elettrica', title: 'Sorpresa Elettrica', description: 'Pronostica se un colpo di scena lascera tutti senza parole.', rarity: 'RARE', type: 'YES_NO', basePoints: 40, imageUrl: '/characters/shock.png' },
-  { slug: 'energia-della-crew', title: 'Energia della Crew', description: 'Scegli se la squadra trovera il ritmo perfetto prima di mezzanotte.', rarity: 'UNCOMMON', type: 'YES_NO', basePoints: 25, imageUrl: '/characters/pulse.png' },
-  { slug: 'piano-in-silenzio', title: 'Piano in Silenzio', description: 'Indovina chi preparera la mossa piu calma e sorprendente della notte.', rarity: 'RARE', type: 'YES_NO', basePoints: 35, imageUrl: '/characters/calm.png' }
-  ,{ slug: 'microfono-al-mezzanotte', title: 'Microfono a Mezzanotte', description: 'Pronostica chi salira sul palco quando la festa raggiunge il punto piu intenso.', rarity: 'EPIC', type: 'YES_NO', basePoints: 55, imageUrl: '/cards/community/microfono-cristallo-ai.png' }
-  ,{ slug: 'busta-delle-meraviglie', title: 'Busta delle Meraviglie', description: 'Indovina chi ricevera l invito segreto che cambia le alleanze della crew.', rarity: 'RARE', type: 'YES_NO', basePoints: 45, imageUrl: '/cards/community/invito-fantasma-ai.png' }
-] as const
 
 function normalized(value: string) {
   return value.toLocaleLowerCase('it-IT').replace(/\s+/g, ' ').trim()
@@ -65,17 +54,19 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
 router.get('/library', requireAuth, async (_req, res) => {
   const catalog = await db.collection('cardCatalog').orderBy('createdAt', 'desc').get()
   const communityCards = catalog.docs.map((doc) => ({ ...documentData(doc.id, doc.data() as Record<string, unknown>), catalogCardId: doc.id }))
-  return res.json({ cards: [...STARTER_CARDS, ...communityCards] })
+  return res.json({ cards: [...starterCards, ...communityCards] })
 })
 
 router.post('/library/:slug', requireAuth, async (req: AuthRequest, res) => {
-  const template = STARTER_CARDS.find((card) => card.slug === req.params.slug)
+  const template = starterCards.find((card) => card.slug === req.params.slug)
   if (!template) return res.status(404).json({ error: 'library_card_not_found' })
   const existing = await db.collection('cards').where('authorId', '==', req.userId!).get()
   const duplicate = existing.docs.find((doc) => doc.data().librarySlug === template.slug)
   if (duplicate) return res.status(200).json({ card: documentData(duplicate.id, duplicate.data() as Record<string, unknown>), alreadyAdded: true })
   const ref = db.collection('cards').doc()
-  const card = { ...template, librarySlug: template.slug, authorId: req.userId!, createdAt: new Date().toISOString() }
+  const imageUrl = template.imageUrl ?? await generateSharedStarterAsset('CARD', template.slug, template.prompt)
+  const card = { ...template, imageUrl, librarySlug: template.slug, authorId: req.userId!, createdAt: new Date().toISOString() }
+  delete (card as any).prompt
   await ref.set(card)
   return res.status(201).json({ card: documentData(ref.id, card) })
 })

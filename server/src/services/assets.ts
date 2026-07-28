@@ -242,6 +242,20 @@ export async function generateImageAsset(userId: string, kind: AssetKind, descri
   return saveToStorage(userId, kind, generated.buffer, generated.contentType)
 }
 
+// Starter artwork belongs to the shared FantaDrama catalogue. It is generated once,
+// cached in Firestore and then reused by every player without consuming a player's quota.
+export async function generateSharedStarterAsset(kind: AssetKind, key: string, description: string) {
+  const ref = db.collection('sharedGeneratedAssets').doc(`${kind.toLowerCase()}_${key}`)
+  const existing = await ref.get()
+  const cached = existing.data()?.imageUrl
+  if (typeof cached === 'string' && cached) return cached
+  const provider = providerFromEnvironment(process.env.AI_IMAGE_PROVIDER)
+  const generated = await generateWithProvider(provider, kind, imagePrompt(kind, description))
+  const imageUrl = await saveToStorage('catalogue', kind, generated.buffer, generated.contentType)
+  await ref.set({ kind, key, imageUrl, createdAt: new Date().toISOString() })
+  return imageUrl
+}
+
 export async function uploadAvatarAsset(userId: string, dataUrl: string) {
   const match = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl)
   if (!match) throw new Error('invalid_image_upload')
