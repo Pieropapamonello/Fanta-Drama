@@ -63,8 +63,11 @@ router.post('/library/custom/:id', requireAuth, async (req: AuthRequest, res) =>
 })
 
 router.get('/', requireAuth, async (req: AuthRequest, res) => {
-  const snapshot = await db.collection('cards').where('authorId', '==', req.userId!).orderBy('createdAt', 'desc').get()
-  return res.json({ cards: snapshot.docs.map((doc) => documentData(doc.id, doc.data() as Record<string, unknown>)) })
+  const snapshot = await db.collection('cards').where('authorId', '==', req.userId!).get()
+  const cards = snapshot.docs
+    .map((doc) => documentData(doc.id, doc.data() as Record<string, unknown>))
+    .sort((left, right) => String(right.createdAt ?? right.addedAt ?? '').localeCompare(String(left.createdAt ?? left.addedAt ?? '')))
+  return res.json({ cards })
 })
 
 router.get('/:id', requireAuth, async (req, res) => {
