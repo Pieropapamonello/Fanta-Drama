@@ -3,9 +3,21 @@ import { z } from 'zod'
 import { requireAuth, AuthRequest } from '../middleware/auth'
 import { db, documentData, groupRole } from '../services/firebase'
 import { notifyGroupMembers } from '../services/notifications'
+import { createDramaBeat } from '../services/drama-director'
 
 const router = Router()
 const schema = z.object({ title: z.string().trim().min(1).max(120), description: z.string().trim().max(1000).optional(), startsAt: z.string().datetime(), endsAt: z.string().datetime(), groupId: z.string().min(1), closePredictionsAt: z.string().datetime().optional(), imageUrl: z.string().url().max(2048).optional() })
+
+async function announceNewEvent(eventId: string, event: Record<string, unknown>, excludedUserId: string) {
+  const liveUpdate = await createDramaBeat({ event: { title: String(event.title), description: String(event.description ?? '') }, phase: 'OPENED' })
+  await db.collection('events').doc(eventId).set({ liveUpdate, liveUpdateAt: new Date().toISOString() }, { merge: true })
+  await notifyGroupMembers(String(event.groupId), {
+    kind: 'EVENT_CREATED',
+    title: `Nuovo evento · ${String(event.title)}`,
+    message: liveUpdate,
+    path: `/events/${eventId}`
+  }, [excludedUserId])
+}
 
 router.post('/', requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -15,12 +27,7 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
     const ref = db.collection('events').doc()
     const event = { ...data, description: data.description ?? '', state: 'PRONOSTICI_APERTI', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
     await ref.set(event)
-    void notifyGroupMembers(data.groupId, {
-      kind: 'EVENT_CREATED',
-      title: `Nuovo evento · ${event.title}`,
-      message: `I pronostici sono aperti fino alla fine dell’evento. ${event.description || 'Entra e fai la tua previsione.'}`,
-      path: `/events/${ref.id}`
-    }, [req.userId!])
+    void announceNewEvent(ref.id, event, req.userId!)
     return res.status(201).json({ event: documentData(ref.id, event) })
   } catch (error: any) { return res.status(400).json({ error: error.message ?? 'invalid_event' }) }
 })

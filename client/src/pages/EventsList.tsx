@@ -21,6 +21,7 @@ export default function EventsList() {
           return <div key={e.id} className={`game-card event-card ${mood.className}`}>
             {e.imageUrl && <img className="event-card-image" src={e.imageUrl} alt="" />}
             <span className="event-status"><i>{mood.icon}</i>{mood.label}</span><h3>{e.title}</h3><p>{e.description || 'Preparati: può succedere di tutto.'}</p>
+            {e.liveUpdate && <p className="event-live-update">✦ {e.liveUpdate}</p>}
             <span className="event-wave" aria-hidden="true" />
             <Link to={`/events/${e.id}`}>Apri evento →</Link>
           </div>

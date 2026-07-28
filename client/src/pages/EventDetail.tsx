@@ -20,6 +20,7 @@ export default function EventDetail() {
             />
           )}
           <p className="mb-4">{event.description}</p>
+          {event.liveUpdate && <p className="event-live-update event-detail-update">✦ {event.liveUpdate}</p>}
           <PredictionForm eventId={event.id} />
         </>
       ) : <p>Caricamento...</p>}

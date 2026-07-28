@@ -1,5 +1,6 @@
 import { db } from './firebase'
 import { notifyGroupMembers, notifyUser } from './notifications'
+import { createDramaBeat } from './drama-director'
 
 export async function closeAndScoreEvent(eventId: string, source: 'manual' | 'automatic' = 'manual') {
   const eventRef = db.collection('events').doc(eventId)
@@ -24,11 +25,14 @@ export async function closeAndScoreEvent(eventId: string, source: 'manual' | 'au
   }
   await batch.commit()
 
+  const liveUpdate = await createDramaBeat({ event: { title: String(event.title), description: String(event.description ?? '') }, phase: 'CLOSED', playersWithPoints: totals.size })
+  await eventRef.set({ liveUpdate, liveUpdateAt: new Date().toISOString() }, { merge: true })
+
   await Promise.allSettled([...totals.entries()].map(([userId, points]) => notifyUser(userId, {
-    kind: 'SCORE_UPDATED', title: `Punteggio aggiornato · ${event.title}`, message: `Hai ricevuto ${points} punti per le tue previsioni. Controlla la classifica e il dettaglio dell’evento.`, path: `/events/${eventId}`
+    kind: 'SCORE_UPDATED', title: `Punteggio aggiornato · ${event.title}`, message: `${liveUpdate} Hai ricevuto ${points} punti.`, path: `/events/${eventId}`
   })))
   await notifyGroupMembers(event.groupId, {
-    kind: 'EVENT_CLOSED', title: `Pronostici chiusi · ${event.title}`, message: totals.size ? 'I punteggi sono stati calcolati e la classifica è aggiornata.' : 'L’evento è terminato senza pronostici da valutare.', path: `/events/${eventId}`
+    kind: 'EVENT_CLOSED', title: `Pronostici chiusi · ${event.title}`, message: liveUpdate, path: `/events/${eventId}`
   }, [...totals.keys()])
   return { alreadyClosed: false, totals, event }
 }
