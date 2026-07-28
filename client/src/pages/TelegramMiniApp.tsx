@@ -32,8 +32,8 @@ export default function TelegramMiniApp() {
         const token = await credential.user.getIdToken()
         localStorage.setItem('fd_token', token)
         setAuthToken(token)
-        await api.post('/auth/bootstrap', { username: response.data.username })
-        navigate('/dashboard', { replace: true })
+        const bootstrap = await api.post('/auth/bootstrap', { username: response.data.username })
+        navigate(bootstrap.data.user?.profileCompleted ? '/dashboard' : '/profile/setup', { replace: true })
       } catch (error: any) {
         attempted.current = false
         const code = error.response?.data?.error

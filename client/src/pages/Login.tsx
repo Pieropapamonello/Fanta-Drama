@@ -39,8 +39,8 @@ export default function Login() {
         const token = await credential.user.getIdToken()
         localStorage.setItem('fd_token', token)
         setAuthToken(token)
-        await api.post('/auth/bootstrap', { username: response.data.username })
-        navigate('/dashboard', { replace: true })
+        const bootstrap = await api.post('/auth/bootstrap', { username: response.data.username })
+        navigate(bootstrap.data.user?.profileCompleted ? '/dashboard' : '/profile/setup', { replace: true })
       } catch (error: any) {
         const detail = error.response?.data?.error
         setTelegramMessage(`Accesso Telegram non riuscito${detail ? `: ${detail}` : ''}. Chiudi e riapri la Mini App dal bot.`)
@@ -62,10 +62,10 @@ export default function Login() {
     try {
       const credential = await signInWithEmailAndPassword(firebaseAuth, data.email, data.password)
       const token = await credential.user.getIdToken()
-      await api.post('/auth/bootstrap')
+      const bootstrap = await api.post('/auth/bootstrap')
       localStorage.setItem('fd_token', token)
       setAuthToken(token)
-      navigate('/dashboard')
+      navigate(bootstrap.data.user?.profileCompleted ? '/dashboard' : '/profile/setup')
     } catch (err: any) {
       console.error(err)
       alert('Errore login')

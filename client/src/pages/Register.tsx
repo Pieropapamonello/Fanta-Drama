@@ -22,10 +22,10 @@ export default function Register() {
     try {
       const credential = await createUserWithEmailAndPassword(firebaseAuth, data.email, data.password)
       const token = await credential.user.getIdToken()
-      await api.post('/auth/bootstrap', { username: data.username })
+      const bootstrap = await api.post('/auth/bootstrap', { username: data.username })
       localStorage.setItem('fd_token', token)
       setAuthToken(token)
-      navigate('/dashboard')
+      navigate(bootstrap.data.user?.profileCompleted ? '/dashboard' : '/profile/setup')
     } catch (err) {
       console.error(err)
       alert('Errore registrazione')

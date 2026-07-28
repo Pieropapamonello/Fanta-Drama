@@ -20,6 +20,7 @@ import EventDetail from './pages/EventDetail'
 import ProtectedRoute from './components/ProtectedRoute'
 import TelegramLogin from './pages/TelegramLogin'
 import TelegramMiniApp from './pages/TelegramMiniApp'
+import ProfileSetup from './pages/ProfileSetup'
 
 function Header() {
   const navigate = useNavigate()
@@ -32,7 +33,7 @@ function Header() {
   return <header className="app-header"><div className="app-header-inner">
     <Link to="/" className="brand"><span className="brand-mark"><Flame size={18} fill="currentColor" /></span>FantaDrama</Link>
     <nav className="nav-links">{loggedIn ? <>
-      <Link to="/dashboard">Dashboard</Link><Link to="/groups">Gruppi</Link><Link to="/events">Eventi</Link><Link to="/cards">Carte</Link><button type="button" onClick={logout}>Esci</button>
+      <Link to="/dashboard">Dashboard</Link><Link to="/groups">Gruppi</Link><Link to="/events">Eventi</Link><Link to="/cards">Carte</Link><Link to="/profile/setup">Profilo</Link><button type="button" onClick={logout}>Esci</button>
     </> : <><Link to="/login">Accedi</Link><Link to="/register">Registrati</Link></>}</nav>
   </div></header>
 }
@@ -46,6 +47,7 @@ export default function App() {
       <Route path="/register" element={<Register />} />
       <Route path="/telegram" element={<TelegramLogin />} />
       <Route path="/telegram-miniapp" element={<TelegramMiniApp />} />
+      <Route path="/profile/setup" element={<ProtectedRoute><ProfileSetup /></ProtectedRoute>} />
       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/groups" element={<ProtectedRoute><GroupsList /></ProtectedRoute>} />
       <Route path="/groups/create" element={<ProtectedRoute><CreateGroup /></ProtectedRoute>} />
