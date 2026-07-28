@@ -20,6 +20,8 @@ const STARTER_CARDS = [
   { slug: 'sorpresa-elettrica', title: 'Sorpresa Elettrica', description: 'Pronostica se un colpo di scena lascera tutti senza parole.', rarity: 'RARE', type: 'YES_NO', basePoints: 40, imageUrl: '/characters/shock.png' },
   { slug: 'energia-della-crew', title: 'Energia della Crew', description: 'Scegli se la squadra trovera il ritmo perfetto prima di mezzanotte.', rarity: 'UNCOMMON', type: 'YES_NO', basePoints: 25, imageUrl: '/characters/pulse.png' },
   { slug: 'piano-in-silenzio', title: 'Piano in Silenzio', description: 'Indovina chi preparera la mossa piu calma e sorprendente della notte.', rarity: 'RARE', type: 'YES_NO', basePoints: 35, imageUrl: '/characters/calm.png' }
+  ,{ slug: 'microfono-al-mezzanotte', title: 'Microfono a Mezzanotte', description: 'Pronostica chi salira sul palco quando la festa raggiunge il punto piu intenso.', rarity: 'EPIC', type: 'YES_NO', basePoints: 55, imageUrl: '/cards/community/microfono-cristallo-ai.png' }
+  ,{ slug: 'busta-delle-meraviglie', title: 'Busta delle Meraviglie', description: 'Indovina chi ricevera l invito segreto che cambia le alleanze della crew.', rarity: 'RARE', type: 'YES_NO', basePoints: 45, imageUrl: '/cards/community/invito-fantasma-ai.png' }
 ] as const
 
 function normalized(value: string) {

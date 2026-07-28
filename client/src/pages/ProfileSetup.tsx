@@ -13,6 +13,8 @@ const avatars = [
   { value: '/characters/mischief.png', title: 'Intrigo', note: 'Un piano per ogni colpo di scena' },
   { value: '/characters/shock.png', title: 'Plot twist', note: 'Imprevedibile fino all’ultimo' },
   { value: '/characters/calm.png', title: 'In controllo', note: 'Legge la stanza in silenzio' },
+  { value: '/avatars/common/violet-curly.png', title: 'Violet vibe', note: 'Sorriso pronto per ogni plot twist' },
+  { value: '/avatars/common/silver-blue.png', title: 'Night pulse', note: 'Calmo fuori, caos dentro' },
 ]
 
 type ProfileForm = { username: string; avatar: string; bio?: string; city?: string; crewRole?: string; motto?: string; notificationPreference?: 'TELEGRAM' | 'EMAIL' | 'BOTH' }
