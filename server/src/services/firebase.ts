@@ -1,6 +1,7 @@
 import { cert, getApps, initializeApp } from 'firebase-admin/app'
 import { getAuth } from 'firebase-admin/auth'
 import { getFirestore } from 'firebase-admin/firestore'
+import { getStorage } from 'firebase-admin/storage'
 
 const rawServiceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_JSON
   ?? (process.env.FIREBASE_SERVICE_ACCOUNT_BASE64
@@ -18,10 +19,11 @@ try {
   throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON must contain valid JSON')
 }
 
-const firebaseApp = getApps()[0] ?? initializeApp({ credential: cert(serviceAccount) })
+export const firebaseApp = getApps()[0] ?? initializeApp({ credential: cert(serviceAccount), storageBucket: process.env.FIREBASE_STORAGE_BUCKET ?? process.env.VITE_FIREBASE_STORAGE_BUCKET ?? `${serviceAccount.project_id}.firebasestorage.app` })
 
 export const db = getFirestore(firebaseApp)
 export const firebaseAuth = getAuth(firebaseApp)
+export const storage = getStorage(firebaseApp)
 
 export function documentData<T extends Record<string, unknown>>(id: string, data: T) {
   return { id, ...data }

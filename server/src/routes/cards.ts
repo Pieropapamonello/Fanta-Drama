@@ -9,7 +9,7 @@ const schema = z.object({
   title: z.string().trim().min(1).max(100), description: z.string().trim().max(500).optional(),
   rarity: z.enum(['COMMON', 'UNCOMMON', 'RARE', 'EPIC', 'LEGENDARY', 'MYTHIC']).optional(),
   type: z.enum(['YES_NO', 'PICK_CHARACTER', 'MULTI_CHOICE', 'NUMBER', 'RANGE', 'TIME', 'TEXT', 'FIRST_ACTION', 'ORDER']).optional(),
-  basePoints: z.number().int().min(0).max(100).optional()
+  basePoints: z.number().int().min(0).max(100).optional(), imageUrl: z.string().url().max(2048).optional()
 })
 
 router.post('/', requireAuth, async (req: AuthRequest, res) => {

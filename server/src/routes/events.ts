@@ -5,7 +5,7 @@ import { db, documentData, groupRole } from '../services/firebase'
 import { notifyGroupMembers } from '../services/notifications'
 
 const router = Router()
-const schema = z.object({ title: z.string().trim().min(1).max(120), description: z.string().trim().max(1000).optional(), startsAt: z.string().datetime(), endsAt: z.string().datetime(), groupId: z.string().min(1), closePredictionsAt: z.string().datetime().optional() })
+const schema = z.object({ title: z.string().trim().min(1).max(120), description: z.string().trim().max(1000).optional(), startsAt: z.string().datetime(), endsAt: z.string().datetime(), groupId: z.string().min(1), closePredictionsAt: z.string().datetime().optional(), imageUrl: z.string().url().max(2048).optional() })
 
 router.post('/', requireAuth, async (req: AuthRequest, res) => {
   try {

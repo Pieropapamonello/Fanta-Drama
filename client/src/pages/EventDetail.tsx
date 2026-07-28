@@ -12,6 +12,13 @@ export default function EventDetail() {
       {event ? (
         <>
           <h2 className="text-2xl mb-4">{event.title}</h2>
+          {event.imageUrl && (
+            <img
+              className="event-detail-image mb-4"
+              src={event.imageUrl}
+              alt={`Illustrazione di ${event.title}`}
+            />
+          )}
           <p className="mb-4">{event.description}</p>
           <PredictionForm eventId={event.id} />
         </>

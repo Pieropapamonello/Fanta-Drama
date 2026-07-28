@@ -22,6 +22,7 @@ export type DramaCardData = {
   type?: string
   basePoints?: number
   imageKey?: string
+  imageUrl?: string
   librarySlug?: string
 }
 
@@ -33,7 +34,7 @@ export default function DramaCard({ card, actionLabel, onAction, isAdding, owned
   return <article className={`drama-card rarity-${rarity}`}>
     <div className="card-foil" aria-hidden="true" />
     <header className="drama-card-head"><span>{card.rarity || 'COMMON'}</span><b>{card.basePoints || 0} PT</b></header>
-    <div className="drama-card-art"><img src={`/cards/${art}.png`} alt={`Illustrazione di ${card.title}`} /><span className="art-shine" /></div>
+    <div className="drama-card-art"><img src={card.imageUrl || `/cards/${art}.png`} alt={`Illustrazione di ${card.title}`} /><span className="art-shine" /></div>
     <div className="drama-card-body">
       <div className="drama-card-title"><h3>{card.title}</h3><span>{typeNames[card.type || 'YES_NO'] || 'Drama'}</span></div>
       <p className="card-effect"><Sparkles size={13} /><strong>Effetto</strong>{effect}</p>

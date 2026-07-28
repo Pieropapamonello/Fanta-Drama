@@ -7,7 +7,7 @@ import { db, documentData, firebaseAuth } from '../services/firebase'
 const router = Router()
 const avatars = ['/characters/pulse.png', '/characters/mischief.png', '/characters/shock.png', '/characters/calm.png'] as const
 const profileSchema = z.object({
-  username: z.string().trim().min(3).max(30), avatar: z.enum(avatars), bio: z.string().trim().max(160).optional(), city: z.string().trim().max(48).optional(),
+  username: z.string().trim().min(3).max(30), avatar: z.union([z.enum(avatars), z.string().url().max(2048)]), bio: z.string().trim().max(160).optional(), city: z.string().trim().max(48).optional(),
   crewRole: z.enum(['Stratega', 'Creatore di caos', 'Osservatore', 'Regista del drama', 'Jolly']).optional(), motto: z.string().trim().max(90).optional(),
   notificationPreference: z.enum(['TELEGRAM', 'EMAIL', 'BOTH']).optional(),
 })

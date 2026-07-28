@@ -12,6 +12,7 @@ import events from './routes/events'
 import predictions from './routes/predictions'
 import admin from './routes/admin'
 import telegram from './routes/telegram'
+import assets from './routes/assets'
 import path from 'path'
 
 const app = express()
@@ -43,6 +44,7 @@ app.use('/api/events', events)
 app.use('/api/predictions', predictions)
 app.use('/api/admin', admin)
 app.use('/api/telegram', telegram)
+app.use('/api/assets', assets)
 
 const clientDist = path.resolve(__dirname, '../../client/dist')
 app.use(express.static(clientDist))

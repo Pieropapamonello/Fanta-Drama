@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom'
 import { EmailAuthProvider, linkWithCredential } from 'firebase/auth'
 import { firebaseAuth } from '../services/firebase'
 import { setAuthToken } from '../services/api'
+import ImageForge from '../components/ImageForge'
 
 const avatars = [
   { value: '/characters/pulse.png', title: 'On fire', note: 'Sempre al centro della scena' },
@@ -27,6 +28,7 @@ export default function ProfileSetup() {
   const [emailPassword, setEmailPassword] = useState('')
   const [contactMessage, setContactMessage] = useState('')
   const [isLinkingEmail, setIsLinkingEmail] = useState(false)
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
   const avatar = watch('avatar')
   const notificationPreference = watch('notificationPreference')
 
@@ -69,6 +71,17 @@ export default function ProfileSetup() {
     } catch { setContactMessage('Non riesco a generare il collegamento Telegram. Riprova.') }
   }
 
+  const uploadAvatar = async (file?: File) => {
+    if (!file) return
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 2_500_000) { setContactMessage('Scegli un PNG, JPG o WebP fino a 2,5 MB.'); return }
+    setIsUploadingAvatar(true); setContactMessage('')
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(file) })
+      const response = await api.post('/assets/avatar-upload', { dataUrl })
+      setValue('avatar', response.data.imageUrl); setContactMessage('Il tuo avatar personale è pronto.')
+    } catch { setContactMessage('Non riesco a caricare questa immagine. Riprova.') } finally { setIsUploadingAvatar(false) }
+  }
+
   const onSubmit = async (data: ProfileForm) => {
     setIsSaving(true); setError('')
     try {
@@ -86,7 +99,7 @@ export default function ProfileSetup() {
       {avatars.map((item) => <button type="button" key={item.value} className={`avatar-choice ${avatar === item.value ? 'is-selected' : ''}`} onClick={() => setValue('avatar', item.value, { shouldValidate: true })}>
         <img src={item.value} alt="" /><span><b>{item.title}</b><small>{item.note}</small></span>{avatar === item.value && <i><Check size={13} /></i>}
       </button>)}
-    </div></section>
+    </div>{!avatars.some((item) => item.value === avatar) && <div className="custom-avatar-preview"><img src={avatar} alt="Avatar personale" /><span>Avatar personale selezionato</span></div>}<ImageForge kind="AVATAR" imageUrl={!avatars.some((item) => item.value === avatar) ? avatar : undefined} onChange={(url) => setValue('avatar', url)} /><label className="avatar-upload">Oppure carica una tua immagine <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void uploadAvatar(event.target.files?.[0])} disabled={isUploadingAvatar} /><small>{isUploadingAvatar ? 'Caricamento avatar…' : 'PNG, JPG o WebP · massimo 2,5 MB'}</small></label></section>
     <section className="profile-fields"><label>Nickname in app<input className="input" {...register('username', { required: true, minLength: 3, maxLength: 30 })} placeholder="Come ti chiama la crew?" /></label><label>Ruolo nella crew<select className="input" {...register('crewRole')}><option>Jolly</option><option>Stratega</option><option>Creatore di caos</option><option>Osservatore</option><option>Regista del drama</option></select></label><label>Bio <small>opzionale</small><textarea className="input profile-textarea" {...register('bio', { maxLength: 160 })} maxLength={160} placeholder="Una frase che racconta il tuo stile…" /></label><label><MapPin size={14} /> Città <small>opzionale</small><input className="input" {...register('city', { maxLength: 48 })} maxLength={48} placeholder="Es. Roma" /></label><label className="profile-motto">Il tuo motto <small>opzionale</small><input className="input" {...register('motto', { maxLength: 90 })} maxLength={90} placeholder="Es. Il drama mi trova sempre." /></label></section>
     <section className="connection-section"><div className="profile-section-title"><Sparkles size={17} /><div><strong>Account e notifiche</strong><span>Collega i canali che vuoi usare</span></div></div><div className="connection-grid">
       <div className={`connection-card ${profile?.connections?.email ? 'is-connected' : ''}`}><b>✉ E-mail</b>{profile?.connections?.email ? <><span>{profile.email}</span><small>Collegata</small></> : <><input className="input" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="nome@email.it" type="email" /><input className="input" value={emailPassword} onChange={(event) => setEmailPassword(event.target.value)} placeholder="Crea una password" type="password" /><button type="button" className="btn btn-ghost" onClick={connectEmail} disabled={isLinkingEmail}>{isLinkingEmail ? 'Collegamento…' : 'Collega e-mail'}</button></>}</div>
