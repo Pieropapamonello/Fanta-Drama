@@ -20,7 +20,9 @@ api.interceptors.request.use(async (config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const requestUrl = String(error.config?.url || '')
+    const hadBearerToken = Boolean(error.config?.headers?.Authorization)
+    if (error.response?.status === 401 && hadBearerToken && !requestUrl.startsWith('/auth/')) {
       localStorage.removeItem('fd_token')
       setAuthToken(null)
       if (window.location.pathname !== '/login') window.location.assign('/login')

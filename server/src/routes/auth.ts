@@ -37,7 +37,7 @@ function isValidTelegramMiniApp(initData: string) {
   const receivedHash = params.get('hash')
   const authDate = Number(params.get('auth_date'))
   const rawUser = params.get('user')
-  if (!receivedHash || !rawUser || !Number.isFinite(authDate) || Math.abs(Math.floor(Date.now() / 1000) - authDate) > 10 * 60) return null
+  if (!receivedHash || !rawUser || !Number.isFinite(authDate) || Math.abs(Math.floor(Date.now() / 1000) - authDate) > 24 * 60 * 60) return null
   params.delete('hash')
   const checkString = [...params.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => `${key}=${value}`).join('\n')
   const secret = crypto.createHmac('sha256', 'WebAppData').update(token).digest()
