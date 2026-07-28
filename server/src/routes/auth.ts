@@ -80,9 +80,13 @@ router.post('/telegram-miniapp', async (req, res) => {
   try {
     const { initData } = telegramMiniAppSchema.parse(req.body)
     const user = isValidTelegramMiniApp(initData)
-    if (!user) return res.status(401).json({ error: 'invalid_telegram_miniapp' })
+    if (!user) {
+      console.error('Telegram Mini App authentication failed: invalid initData')
+      return res.status(401).json({ error: 'invalid_telegram_miniapp' })
+    }
     return res.json(await telegramCustomToken({ id: user.id!, first_name: user.first_name!, last_name: user.last_name, username: user.username, photo_url: user.photo_url }))
   } catch (error: any) {
+    console.error('Telegram Mini App authentication failed', error.message ?? error)
     return res.status(400).json({ error: error.message ?? 'telegram_miniapp_failed' })
   }
 })

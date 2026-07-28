@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
@@ -22,24 +22,39 @@ const schema = z.object({
 export default function Login() {
   const { register, handleSubmit } = useForm({ resolver: zodResolver(schema) })
   const navigate = useNavigate()
+  const [telegramMessage, setTelegramMessage] = useState<string | null>(null)
+  const telegramAttempted = useRef(false)
   useEffect(() => {
     const completeMiniAppLogin = async () => {
       const webApp = window.Telegram?.WebApp
       if (!webApp?.initData) return
+      if (telegramAttempted.current) return
+      telegramAttempted.current = true
+      setTelegramMessage('Accesso Telegram in corso…')
       webApp.ready()
       webApp.expand()
-      const response = await api.post('/auth/telegram-miniapp', { initData: webApp.initData })
-      const credential = await signInWithCustomToken(firebaseAuth, response.data.customToken)
-      const token = await credential.user.getIdToken()
-      localStorage.setItem('fd_token', token)
-      setAuthToken(token)
-      await api.post('/auth/bootstrap', { username: response.data.username })
-      navigate('/dashboard', { replace: true })
+      try {
+        const response = await api.post('/auth/telegram-miniapp', { initData: webApp.initData })
+        const credential = await signInWithCustomToken(firebaseAuth, response.data.customToken)
+        const token = await credential.user.getIdToken()
+        localStorage.setItem('fd_token', token)
+        setAuthToken(token)
+        await api.post('/auth/bootstrap', { username: response.data.username })
+        navigate('/dashboard', { replace: true })
+      } catch (error: any) {
+        const detail = error.response?.data?.error
+        setTelegramMessage(`Accesso Telegram non riuscito${detail ? `: ${detail}` : ''}. Chiudi e riapri la Mini App dal bot.`)
+        telegramAttempted.current = false
+      }
+    }
+    if (window.Telegram?.WebApp) {
+      void completeMiniAppLogin()
+      return
     }
     const script = document.createElement('script')
     script.src = 'https://telegram.org/js/telegram-web-app.js?61'
     script.async = true
-    script.onload = () => { completeMiniAppLogin().catch((error) => console.error('Telegram Mini App login failed', error)) }
+    script.onload = () => { void completeMiniAppLogin() }
     document.head.appendChild(script)
     return () => script.remove()
   }, [navigate])
@@ -64,6 +79,7 @@ export default function Login() {
       <label className="block mt-4 mb-2">Password</label>
       <input type="password" {...register('password')} className="input" />
       <button className="btn mt-4">Accedi</button>
+      {telegramMessage && <p className="mt-4 text-sm text-slate-700" role="status">{telegramMessage}</p>}
       <div className="mt-6 border-t pt-4 text-center text-sm text-slate-600">oppure accedi senza email</div>
       <TelegramLoginButton label="Accedi o registrati con Telegram" />
     </form>
