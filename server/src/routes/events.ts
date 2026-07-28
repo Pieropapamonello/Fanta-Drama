@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { requireAuth, AuthRequest } from '../middleware/auth'
 import { db, documentData, groupRole } from '../services/firebase'
+import { notifyGroupMembers } from '../services/notifications'
 
 const router = Router()
 const schema = z.object({ title: z.string().trim().min(1).max(120), description: z.string().trim().max(1000).optional(), startsAt: z.string().datetime(), endsAt: z.string().datetime(), groupId: z.string().min(1), closePredictionsAt: z.string().datetime().optional() })
@@ -14,6 +15,12 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
     const ref = db.collection('events').doc()
     const event = { ...data, description: data.description ?? '', state: 'PRONOSTICI_APERTI', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
     await ref.set(event)
+    void notifyGroupMembers(data.groupId, {
+      kind: 'EVENT_CREATED',
+      title: `Nuovo evento · ${event.title}`,
+      message: `I pronostici sono aperti fino alla fine dell’evento. ${event.description || 'Entra e fai la tua previsione.'}`,
+      path: `/events/${ref.id}`
+    }, [req.userId!])
     return res.status(201).json({ event: documentData(ref.id, event) })
   } catch (error: any) { return res.status(400).json({ error: error.message ?? 'invalid_event' }) }
 })
