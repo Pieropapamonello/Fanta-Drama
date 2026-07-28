@@ -2,7 +2,7 @@ import crypto from 'crypto'
 import { storage, db } from './firebase'
 
 export type AssetKind = 'CARD' | 'EVENT' | 'AVATAR'
-type ImageProvider = 'openai' | 'gemini' | 'grok'
+type ImageProvider = 'openai' | 'gemini' | 'grok' | 'cloudflare'
 type GeneratedImage = { buffer: Buffer; contentType: string }
 
 function imagePrompt(kind: AssetKind, description: string) {
@@ -36,11 +36,12 @@ async function consumeQuota(userId: string) {
 function providerFromEnvironment(value: string | undefined, allowAuto = true): ImageProvider {
   const provider = (value ?? 'openai').trim().toLowerCase()
   if (allowAuto && provider === 'auto') {
+    if (process.env.CLOUDFLARE_AI_TOKEN && process.env.CLOUDFLARE_ACCOUNT_ID) return 'cloudflare'
     if (process.env.GEMINI_API_KEY) return 'gemini'
     if (process.env.OPENAI_API_KEY) return 'openai'
     if (process.env.XAI_API_KEY) return 'grok'
   }
-  if (provider === 'openai' || provider === 'gemini' || provider === 'grok') return provider
+  if (provider === 'openai' || provider === 'gemini' || provider === 'grok' || provider === 'cloudflare') return provider
   throw new Error('unsupported_image_provider')
 }
 
@@ -102,7 +103,37 @@ async function generateWithGrok(kind: AssetKind, prompt: string): Promise<Genera
   return { buffer, contentType: 'image/jpeg' }
 }
 
+async function generateWithCloudflare(kind: AssetKind, prompt: string): Promise<GeneratedImage> {
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID
+  const apiToken = process.env.CLOUDFLARE_AI_TOKEN
+  if (!accountId || !apiToken) throw new Error('cloudflare_image_generation_not_configured')
+  const model = process.env.CLOUDFLARE_IMAGE_MODEL ?? '@cf/stabilityai/stable-diffusion-xl-base-1.0'
+  const eventImage = kind === 'EVENT'
+  const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/run/${model}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiToken}`, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      prompt,
+      negative_prompt: 'text, letters, logo, watermark, celebrity, recognizable real person, copyrighted character, blurry, low quality',
+      width: eventImage ? 1024 : 768,
+      height: eventImage ? 576 : 1024,
+      num_steps: 12,
+      guidance: 7.5
+    })
+  })
+  if (!response.ok) throw new Error(`image_generation_failed_${response.status}`)
+  const contentType = response.headers.get('content-type') ?? ''
+  const payload = Buffer.from(await response.arrayBuffer())
+  if (contentType.startsWith('image/')) return { buffer: payload, contentType }
+  try {
+    const body = JSON.parse(payload.toString('utf8')) as { result?: string; success?: boolean }
+    if (body.result) return { buffer: Buffer.from(body.result.replace(/^data:image\/\w+;base64,/, ''), 'base64'), contentType: 'image/png' }
+  } catch { /* The binary response path above handles the normal image result. */ }
+  throw new Error('image_generation_empty_response')
+}
+
 async function generateWithProvider(provider: ImageProvider, kind: AssetKind, prompt: string) {
+  if (provider === 'cloudflare') return generateWithCloudflare(kind, prompt)
   if (provider === 'gemini') return generateWithGemini(kind, prompt)
   if (provider === 'grok') return generateWithGrok(kind, prompt)
   return generateWithOpenAI(kind, prompt)

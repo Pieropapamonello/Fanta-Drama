@@ -18,7 +18,7 @@ export default function ImageForge({ kind, imageUrl, onChange }: { kind: Kind; i
       onChange(response.data.imageUrl); setMessage('Immagine pronta: verrà salvata insieme al contenuto.')
     } catch (error: any) {
       const code = error.response?.data?.error
-      setMessage(/^(openai|gemini|grok)_image_generation_not_configured$/.test(code ?? '') ? 'La generazione IA deve ancora essere attivata dall’amministratore.' : code === 'daily_generation_limit_reached' ? 'Hai raggiunto il limite giornaliero di immagini IA.' : 'Non riesco a generare l’immagine. Modifica la descrizione e riprova.')
+      setMessage(/^(openai|gemini|grok|cloudflare)_image_generation_not_configured$/.test(code ?? '') ? 'La generazione IA deve ancora essere attivata dall’amministratore.' : code === 'daily_generation_limit_reached' ? 'Hai raggiunto il limite giornaliero di immagini IA.' : 'Non riesco a generare l’immagine. Modifica la descrizione e riprova.')
     } finally { setIsGenerating(false) }
   }
 

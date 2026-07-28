@@ -14,7 +14,7 @@ router.post('/generate', requireAuth, async (req: AuthRequest, res) => {
     return res.status(201).json({ imageUrl })
   } catch (error: any) {
     const message = error.message ?? 'image_generation_failed'
-    const unavailable = /^(openai|gemini|grok)_image_generation_not_configured$/.test(message)
+    const unavailable = /^(openai|gemini|grok|cloudflare)_image_generation_not_configured$/.test(message)
     return res.status(unavailable ? 503 : 400).json({ error: message })
   }
 })
