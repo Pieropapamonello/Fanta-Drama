@@ -63,7 +63,7 @@ async function ensureDropboxFolder(accessToken: string, path: string) {
       const raw = await response.text()
       let payload: { error_summary?: string, error?: string } | null = null
       try { payload = JSON.parse(raw) as { error_summary?: string, error?: string } } catch { /* The fallback below covers plain-text API errors. */ }
-      const reason = (payload?.error_summary ?? payload?.error ?? raw).split('/')[0].replace(/[^a-z0-9_-]/gi, '').slice(0, 80) || 'unknown'
+      const reason = (payload?.error_summary ?? payload?.error ?? raw).replace(/[^a-z0-9 .:_-]/gi, '').slice(0, 180).trim() || 'unknown'
       throw new Error(`dropbox_folder_create_failed_${response.status}_${reason}`)
     }
   }
