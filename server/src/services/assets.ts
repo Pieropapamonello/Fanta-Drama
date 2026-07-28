@@ -3,6 +3,7 @@ import { storage, db } from './firebase'
 
 export type AssetKind = 'CARD' | 'EVENT' | 'AVATAR'
 type ImageProvider = 'openai' | 'gemini' | 'grok' | 'cloudflare'
+type AssetStorageProvider = 'firebase' | 'dropbox'
 type GeneratedImage = { buffer: Buffer; contentType: string }
 
 function imagePrompt(kind: AssetKind, description: string) {
@@ -12,13 +13,83 @@ function imagePrompt(kind: AssetKind, description: string) {
   return `Square character avatar, head-and-shoulders of an original fictional adult. Description: ${description}. Friendly expressive face, centered for circular crop. ${style}`
 }
 
-async function saveToStorage(userId: string, kind: AssetKind, buffer: Buffer, contentType: string) {
+function extensionFor(contentType: string) {
+  return contentType === 'image/jpeg' ? 'jpg' : contentType === 'image/webp' ? 'webp' : 'png'
+}
+
+function assetStorageProvider(): AssetStorageProvider {
+  const provider = (process.env.ASSET_STORAGE_PROVIDER ?? 'firebase').trim().toLowerCase()
+  if (provider === 'firebase' || provider === 'dropbox') return provider
+  throw new Error('unsupported_asset_storage_provider')
+}
+
+async function saveToFirebaseStorage(userId: string, kind: AssetKind, buffer: Buffer, contentType: string) {
   const extension = contentType === 'image/jpeg' ? 'jpg' : contentType === 'image/webp' ? 'webp' : 'png'
   const token = crypto.randomUUID()
   const path = `fantadrama/${kind.toLowerCase()}/${userId}/${crypto.randomUUID()}.${extension}`
   const file = storage.bucket().file(path)
   await file.save(buffer, { resumable: false, metadata: { contentType, metadata: { firebaseStorageDownloadTokens: token } } })
   return `https://firebasestorage.googleapis.com/v0/b/${storage.bucket().name}/o/${encodeURIComponent(path)}?alt=media&token=${token}`
+}
+
+function dropboxAssetFolder() {
+  const configured = (process.env.DROPBOX_ASSET_FOLDER ?? '/FantaDrama').trim()
+  if (!configured || configured === '/') return ''
+  return `/${configured.replace(/^\/+|\/+$/g, '')}`
+}
+
+function directDropboxUrl(sharedUrl: string) {
+  const url = new URL(sharedUrl)
+  url.searchParams.delete('dl')
+  url.searchParams.set('raw', '1')
+  return url.toString()
+}
+
+async function dropboxRequest(endpoint: string, accessToken: string, body: unknown, contentType = 'application/json') {
+  return fetch(`https://api.dropboxapi.com/2/${endpoint}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'content-type': contentType },
+    body: JSON.stringify(body)
+  })
+}
+
+async function saveToDropbox(userId: string, kind: AssetKind, buffer: Buffer, contentType: string) {
+  const accessToken = process.env.DROPBOX_ACCESS_TOKEN?.trim()
+  if (!accessToken) throw new Error('dropbox_storage_not_configured')
+  const path = `${dropboxAssetFolder()}/${kind.toLowerCase()}/${userId}/${crypto.randomUUID()}.${extensionFor(contentType)}`
+  const upload = await fetch('https://content.dropboxapi.com/2/files/upload', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'content-type': 'application/octet-stream',
+      'Dropbox-API-Arg': JSON.stringify({ path, mode: 'add', autorename: false, mute: true })
+    },
+    body: new Uint8Array(buffer)
+  })
+  if (!upload.ok) throw new Error(`dropbox_upload_failed_${upload.status}`)
+
+  const sharedLink = await dropboxRequest('sharing/create_shared_link_with_settings', accessToken, {
+    path,
+    settings: { requested_visibility: 'public' }
+  })
+  if (sharedLink.ok) {
+    const payload = await sharedLink.json() as { url?: string }
+    if (payload.url) return directDropboxUrl(payload.url)
+  }
+
+  // Dropbox returns an error when a public link already exists for this path.
+  const existingLinks = await dropboxRequest('sharing/list_shared_links', accessToken, { path, direct_only: true })
+  if (existingLinks.ok) {
+    const payload = await existingLinks.json() as { links?: Array<{ url?: string }> }
+    const url = payload.links?.[0]?.url
+    if (url) return directDropboxUrl(url)
+  }
+  throw new Error(`dropbox_shared_link_failed_${sharedLink.status}`)
+}
+
+async function saveToStorage(userId: string, kind: AssetKind, buffer: Buffer, contentType: string) {
+  if (assetStorageProvider() === 'dropbox') return saveToDropbox(userId, kind, buffer, contentType)
+  return saveToFirebaseStorage(userId, kind, buffer, contentType)
 }
 
 async function consumeQuota(userId: string) {
