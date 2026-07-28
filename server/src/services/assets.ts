@@ -2,6 +2,8 @@ import crypto from 'crypto'
 import { storage, db } from './firebase'
 
 export type AssetKind = 'CARD' | 'EVENT' | 'AVATAR'
+type ImageProvider = 'openai' | 'gemini' | 'grok'
+type GeneratedImage = { buffer: Buffer; contentType: string }
 
 function imagePrompt(kind: AssetKind, description: string) {
   const style = 'Original FantaDrama social-game universe; refined glossy 3D editorial illustration; cinematic violet, indigo, cyan and hot-pink lighting; no text, no letters, no logos, no watermark, no celebrity, no recognizable real person, no copyrighted characters.'
@@ -31,14 +33,24 @@ async function consumeQuota(userId: string) {
   })
 }
 
-export async function generateImageAsset(userId: string, kind: AssetKind, description: string) {
+function providerFromEnvironment(value: string | undefined, allowAuto = true): ImageProvider {
+  const provider = (value ?? 'openai').trim().toLowerCase()
+  if (allowAuto && provider === 'auto') {
+    if (process.env.GEMINI_API_KEY) return 'gemini'
+    if (process.env.OPENAI_API_KEY) return 'openai'
+    if (process.env.XAI_API_KEY) return 'grok'
+  }
+  if (provider === 'openai' || provider === 'gemini' || provider === 'grok') return provider
+  throw new Error('unsupported_image_provider')
+}
+
+async function generateWithOpenAI(kind: AssetKind, prompt: string): Promise<GeneratedImage> {
   const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) throw new Error('openai_image_generation_not_configured')
-  await consumeQuota(userId)
   const response = await fetch('https://api.openai.com/v1/images/generations', {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ model: 'gpt-image-2', prompt: imagePrompt(kind, description), size: kind === 'EVENT' ? '1536x1024' : '1024x1024', quality: 'medium', output_format: 'png' })
+    body: JSON.stringify({ model: process.env.OPENAI_IMAGE_MODEL ?? 'gpt-image-2', prompt, size: kind === 'EVENT' ? '1536x1024' : '1024x1024', quality: 'medium', output_format: 'png' })
   })
   if (!response.ok) throw new Error(`image_generation_failed_${response.status}`)
   const responseData = await response.json() as { data?: Array<{ b64_json?: string, url?: string }> }
@@ -47,7 +59,67 @@ export async function generateImageAsset(userId: string, kind: AssetKind, descri
   if (image?.b64_json) buffer = Buffer.from(image.b64_json, 'base64')
   else if (image?.url) { const download = await fetch(image.url); if (download.ok) buffer = Buffer.from(await download.arrayBuffer()) }
   if (!buffer) throw new Error('image_generation_empty_response')
-  return saveToStorage(userId, kind, buffer, 'image/png')
+  return { buffer, contentType: 'image/png' }
+}
+
+async function generateWithGemini(kind: AssetKind, prompt: string): Promise<GeneratedImage> {
+  const apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey) throw new Error('gemini_image_generation_not_configured')
+  const model = process.env.GEMINI_IMAGE_MODEL ?? 'gemini-3.1-flash-image'
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/${encodeURIComponent(model)}:generateContent`, {
+    method: 'POST',
+    headers: { 'x-goog-api-key': apiKey, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        responseModalities: ['IMAGE'],
+        responseFormat: { image: { aspectRatio: kind === 'EVENT' ? '16:9' : '1:1', imageSize: '1K' } }
+      }
+    })
+  })
+  if (!response.ok) throw new Error(`image_generation_failed_${response.status}`)
+  const responseData = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ inlineData?: { data?: string; mimeType?: string } }> } }> }
+  const inlineData = responseData.candidates?.flatMap((candidate) => candidate.content?.parts ?? []).find((part) => part.inlineData?.data)?.inlineData
+  if (!inlineData?.data) throw new Error('image_generation_empty_response')
+  return { buffer: Buffer.from(inlineData.data, 'base64'), contentType: inlineData.mimeType ?? 'image/png' }
+}
+
+async function generateWithGrok(kind: AssetKind, prompt: string): Promise<GeneratedImage> {
+  const apiKey = process.env.XAI_API_KEY
+  if (!apiKey) throw new Error('grok_image_generation_not_configured')
+  const response = await fetch('https://api.x.ai/v1/images/generations', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ model: process.env.GROK_IMAGE_MODEL ?? 'grok-imagine-image', prompt, aspect_ratio: kind === 'EVENT' ? '16:9' : '1:1', response_format: 'b64_json' })
+  })
+  if (!response.ok) throw new Error(`image_generation_failed_${response.status}`)
+  const responseData = await response.json() as { data?: Array<{ b64_json?: string; url?: string }> }
+  const image = responseData.data?.[0]
+  let buffer: Buffer | undefined
+  if (image?.b64_json) buffer = Buffer.from(image.b64_json, 'base64')
+  else if (image?.url) { const download = await fetch(image.url); if (download.ok) buffer = Buffer.from(await download.arrayBuffer()) }
+  if (!buffer) throw new Error('image_generation_empty_response')
+  return { buffer, contentType: 'image/jpeg' }
+}
+
+async function generateWithProvider(provider: ImageProvider, kind: AssetKind, prompt: string) {
+  if (provider === 'gemini') return generateWithGemini(kind, prompt)
+  if (provider === 'grok') return generateWithGrok(kind, prompt)
+  return generateWithOpenAI(kind, prompt)
+}
+
+export async function generateImageAsset(userId: string, kind: AssetKind, description: string) {
+  const provider = providerFromEnvironment(process.env.AI_IMAGE_PROVIDER)
+  const fallback = process.env.AI_IMAGE_FALLBACK_PROVIDER ? providerFromEnvironment(process.env.AI_IMAGE_FALLBACK_PROVIDER, false) : undefined
+  await consumeQuota(userId)
+  let generated: GeneratedImage
+  try {
+    generated = await generateWithProvider(provider, kind, imagePrompt(kind, description))
+  } catch (error) {
+    if (!fallback || fallback === provider) throw error
+    generated = await generateWithProvider(fallback, kind, imagePrompt(kind, description))
+  }
+  return saveToStorage(userId, kind, generated.buffer, generated.contentType)
 }
 
 export async function uploadAvatarAsset(userId: string, dataUrl: string) {
