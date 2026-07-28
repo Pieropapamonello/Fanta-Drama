@@ -36,8 +36,8 @@ router.post('/library/:slug', requireAuth, async (req: AuthRequest, res) => {
   return res.status(201).json({ card: documentData(ref.id, card) })
 })
 
-router.get('/', requireAuth, async (_req, res) => {
-  const snapshot = await db.collection('cards').orderBy('createdAt', 'desc').get()
+router.get('/', requireAuth, async (req: AuthRequest, res) => {
+  const snapshot = await db.collection('cards').where('authorId', '==', req.userId!).orderBy('createdAt', 'desc').get()
   return res.json({ cards: snapshot.docs.map((doc) => documentData(doc.id, doc.data() as Record<string, unknown>)) })
 })
 

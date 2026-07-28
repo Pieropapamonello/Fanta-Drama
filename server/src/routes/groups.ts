@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { FieldValue } from 'firebase-admin/firestore'
 import { requireAuth, AuthRequest } from '../middleware/auth'
 import { db, documentData } from '../services/firebase'
+import { isPlatformAdmin } from '../services/platform-admin'
 
 const router = Router()
 const createSchema = z.object({ name: z.string().trim().min(1).max(80), description: z.string().trim().max(500).optional() })
@@ -53,13 +54,15 @@ router.post('/join', requireAuth, async (req: AuthRequest, res) => {
 })
 
 router.get('/', requireAuth, async (req: AuthRequest, res) => {
-  const snapshot = await db.collection('groups').where('memberIds', 'array-contains', req.userId!).get()
+  const snapshot = await (await isPlatformAdmin(req.userId!)
+    ? db.collection('groups').get()
+    : db.collection('groups').where('memberIds', 'array-contains', req.userId!).get())
   return res.json({ groups: snapshot.docs.map((doc) => documentData(doc.id, doc.data() as Record<string, unknown>)) })
 })
 
 router.get('/:id', requireAuth, async (req: AuthRequest, res) => {
   const snapshot = await db.collection('groups').doc(req.params.id).get()
-  if (!snapshot.exists || !(snapshot.data()?.memberIds as string[]).includes(req.userId!)) return res.status(404).json({ error: 'not_found' })
+  if (!snapshot.exists || (!(snapshot.data()?.memberIds as string[]).includes(req.userId!) && !await isPlatformAdmin(req.userId!))) return res.status(404).json({ error: 'not_found' })
   return res.json({ group: documentData(snapshot.id, snapshot.data() as Record<string, unknown>) })
 })
 
@@ -67,7 +70,7 @@ router.delete('/:id', requireAuth, async (req: AuthRequest, res) => {
   const groupRef = db.collection('groups').doc(req.params.id)
   const group = await groupRef.get()
   if (!group.exists) return res.status(404).json({ error: 'not_found' })
-  if (group.data()?.memberRoles?.[req.userId!] !== 'ADMIN') return res.status(403).json({ error: 'admin_required' })
+  if (group.data()?.memberRoles?.[req.userId!] !== 'ADMIN' && !await isPlatformAdmin(req.userId!)) return res.status(403).json({ error: 'admin_required' })
 
   const [characters, events] = await Promise.all([
     db.collection('characters').where('groupId', '==', group.id).get(),
