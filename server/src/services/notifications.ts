@@ -50,21 +50,18 @@ export async function notifyUser(userId: string, payload: NotificationPayload) {
   ])
   const user = userSnapshot.exists ? userSnapshot.data()! : {}
   const link = linkSnapshot.exists ? linkSnapshot.data()! : {}
-  let result: { channel: string, status: string }
-  if (link.chatId) {
+  const preference = user.notificationPreference === 'TELEGRAM' || user.notificationPreference === 'EMAIL' || user.notificationPreference === 'BOTH' ? user.notificationPreference : 'BOTH'
+  const results: Array<{ channel: string, status: string }> = []
+  if ((preference === 'TELEGRAM' || preference === 'BOTH') && link.chatId) {
     try {
       await sendTelegramMessage(String(link.chatId), `✨ ${payload.title}\n\n${payload.message}`, payload.path ?? '/dashboard')
-      result = { channel: 'telegram', status: 'sent' }
-    } catch {
-      result = user.email ? await sendEmail(String(user.email), payload) : { channel: 'telegram', status: 'failed' }
-    }
-  } else if (user.email) {
-    result = await sendEmail(String(user.email), payload)
-  } else {
-    result = { channel: 'in_app', status: 'stored' }
+      results.push({ channel: 'telegram', status: 'sent' })
+    } catch { results.push({ channel: 'telegram', status: 'failed' }) }
   }
-  await db.collection('notifications').add({ userId, ...payload, ...result, createdAt: new Date().toISOString() })
-  return result
+  if ((preference === 'EMAIL' || preference === 'BOTH') && user.email) results.push(await sendEmail(String(user.email), payload))
+  if (!results.length) results.push({ channel: 'in_app', status: 'stored' })
+  await db.collection('notifications').add({ userId, ...payload, preference, deliveries: results, createdAt: new Date().toISOString() })
+  return results
 }
 
 export async function notifyGroupMembers(groupId: string, payload: NotificationPayload, excludedUserIds: string[] = []) {

@@ -28,12 +28,16 @@ async function sendMenu(chatId: string | number, firstName?: string) {
 
 async function rememberLink(user: TelegramUser, chatId: string | number) {
   if (!user.id) return
-  await db.collection('telegramLinks').doc(`telegram_${user.id}`).set({ telegramUserId: String(user.id), chatId: String(chatId), username: user.username ?? null, firstName: user.first_name ?? null, updatedAt: new Date().toISOString() }, { merge: true })
+  const links = await db.collection('telegramLinks').where('telegramUserId', '==', String(user.id)).limit(1).get()
+  const ref = links.empty ? db.collection('telegramLinks').doc(`telegram_${user.id}`) : links.docs[0].ref
+  await ref.set({ telegramUserId: String(user.id), chatId: String(chatId), username: user.username ?? null, firstName: user.first_name ?? null, updatedAt: new Date().toISOString() }, { merge: true })
 }
 
 async function registeredUser(telegramId?: string | number): Promise<{ id: string, username?: string, crewRole?: string, city?: string, motto?: string } | null> {
   if (!telegramId) return null
-  const snapshot = await db.collection('users').doc(`telegram_${telegramId}`).get()
+  const links = await db.collection('telegramLinks').where('telegramUserId', '==', String(telegramId)).limit(1).get()
+  const userId = links.empty ? `telegram_${telegramId}` : links.docs[0].id
+  const snapshot = await db.collection('users').doc(userId).get()
   if (!snapshot.exists) return null
   const data = snapshot.data() as Record<string, unknown>
   return {
@@ -43,6 +47,28 @@ async function registeredUser(telegramId?: string | number): Promise<{ id: strin
     city: typeof data.city === 'string' ? data.city : undefined,
     motto: typeof data.motto === 'string' ? data.motto : undefined,
   }
+}
+
+async function completeTelegramLink(chatId: string | number, from: TelegramUser, code: string) {
+  const requestRef = db.collection('telegramLinkRequests').doc(code)
+  const request = await requestRef.get()
+  const data = request.data()
+  if (!request.exists || !data?.userId || data.usedAt || new Date(data.expiresAt).getTime() < Date.now()) {
+    await telegramApi('sendMessage', { chat_id: chatId, text: 'Questo link di collegamento non è più valido. Torna nel profilo FantaDrama e creane uno nuovo.' })
+    return
+  }
+  const links = await db.collection('telegramLinks').where('telegramUserId', '==', String(from.id)).limit(1).get()
+  if (!links.empty && links.docs[0].id !== data.userId) {
+    const existingUser = await db.collection('users').doc(links.docs[0].id).get()
+    if (existingUser.exists) {
+      await telegramApi('sendMessage', { chat_id: chatId, text: 'Questo account Telegram è già collegato a un altro profilo FantaDrama.' })
+      return
+    }
+    await links.docs[0].ref.delete()
+  }
+  await db.collection('telegramLinks').doc(data.userId).set({ telegramUserId: String(from.id), chatId: String(chatId), username: from.username ?? null, firstName: from.first_name ?? null, linkedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, { merge: true })
+  await requestRef.update({ usedAt: new Date().toISOString() })
+  await telegramApi('sendMessage', { chat_id: chatId, text: '✅ Telegram è collegato al tuo profilo FantaDrama. Ora puoi scegliere Telegram, e-mail o entrambi per le notifiche.', reply_markup: { inline_keyboard: [[{ text: 'Apri FantaDrama', web_app: { url: appUrl } }]] } })
 }
 
 async function sendMenuHint(chatId: string | number) {
@@ -93,13 +119,17 @@ router.post('/webhook', async (req, res) => {
     }
     const message = update.message
     if (!message?.chat?.id || !message.from?.id) return res.sendStatus(200)
-    await rememberLink(message.from, message.chat.id)
-    const command = message.text?.trim().split(/\s+/)[0]?.toLowerCase()
-    if (command === '/start' || command === '/menu' || command === '/help') await sendMenu(message.chat.id, message.from.first_name)
+    const parts = message.text?.trim().split(/\s+/) ?? []
+    const command = parts[0]?.toLowerCase()
+    if (command === '/start' && parts[1]?.startsWith('link_')) await completeTelegramLink(message.chat.id, message.from, parts[1].slice('link_'.length))
+    else {
+      await rememberLink(message.from, message.chat.id)
+      if (command === '/start' || command === '/menu' || command === '/help') await sendMenu(message.chat.id, message.from.first_name)
     else if (command === '/profilo') await handleAction(message.chat.id, message.from, 'profile')
     else if (command === '/gruppi') await handleAction(message.chat.id, message.from, 'groups')
     else if (command === '/eventi') await handleAction(message.chat.id, message.from, 'events')
     else if (command === '/punti') await handleAction(message.chat.id, message.from, 'scores')
+    }
   } catch (error) { console.error('Telegram webhook processing failed', error) }
   return res.sendStatus(200)
 })
