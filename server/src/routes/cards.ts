@@ -2,7 +2,6 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { requireAuth, AuthRequest } from '../middleware/auth'
 import { db, documentData } from '../services/firebase'
-import { generateSharedStarterAsset } from '../services/assets'
 import { starterCards } from '../data/starter-content'
 
 const router = Router()
@@ -54,7 +53,9 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
 router.get('/library', requireAuth, async (_req, res) => {
   const catalog = await db.collection('cardCatalog').orderBy('createdAt', 'desc').get()
   const communityCards = catalog.docs.map((doc) => ({ ...documentData(doc.id, doc.data() as Record<string, unknown>), catalogCardId: doc.id }))
-  return res.json({ cards: [...starterCards, ...communityCards] })
+  // Official cards are released only with their own finished GPT image. This
+  // prevents the UI fallback art from ever making two cards look the same.
+  return res.json({ cards: [...starterCards.filter((card) => Boolean(card.imageUrl)), ...communityCards] })
 })
 
 router.post('/library/:slug', requireAuth, async (req: AuthRequest, res) => {
@@ -64,7 +65,8 @@ router.post('/library/:slug', requireAuth, async (req: AuthRequest, res) => {
   const duplicate = existing.docs.find((doc) => doc.data().librarySlug === template.slug)
   if (duplicate) return res.status(200).json({ card: documentData(duplicate.id, duplicate.data() as Record<string, unknown>), alreadyAdded: true })
   const ref = db.collection('cards').doc()
-  const imageUrl = template.imageUrl ?? await generateSharedStarterAsset('CARD', template.slug, template.prompt)
+  if (!template.imageUrl) return res.status(409).json({ error: 'library_card_artwork_pending' })
+  const imageUrl = template.imageUrl
   const card = { ...template, imageUrl, librarySlug: template.slug, authorId: req.userId!, createdAt: new Date().toISOString() }
   delete (card as any).prompt
   await ref.set(card)
