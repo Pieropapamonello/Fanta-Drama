@@ -50,7 +50,7 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
     if (!sameImage.empty) return res.status(409).json({ error: 'card_image_already_exists' })
     const profile = await db.collection('users').doc(req.userId!).get()
     const ref = db.collection('cardCatalog').doc()
-    const card = { ...data, rarity: data.rarity ?? 'COMMON', type: data.type ?? 'YES_NO', status: 'PENDING', creatorId: req.userId!, creatorName: profile.data()?.username ?? 'Giocatore', normalizedTitle, normalizedDescription, createdAt: new Date().toISOString() }
+    const card = { ...data, rarity: data.rarity ?? 'COMMON', type: data.type ?? 'YES_NO', status: 'APPROVED', creatorId: req.userId!, creatorName: profile.data()?.username ?? 'Giocatore', normalizedTitle, normalizedDescription, createdAt: new Date().toISOString(), autoApprovedAt: new Date().toISOString() }
     await ref.set(card)
     return res.status(201).json({ catalogCard: documentData(ref.id, card) })
   } catch (error: any) { return res.status(400).json({ error: error.message ?? 'invalid_card' }) }
@@ -58,7 +58,7 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
 
 router.get('/library', requireAuth, async (_req, res) => {
   const catalog = await db.collection('cardCatalog').orderBy('createdAt', 'desc').get()
-  const communityCards = catalog.docs.filter((doc) => doc.data().status !== 'PENDING' && doc.data().status !== 'REJECTED').map((doc) => ({ ...documentData(doc.id, doc.data() as Record<string, unknown>), catalogCardId: doc.id }))
+  const communityCards = catalog.docs.filter((doc) => doc.data().status !== 'REJECTED').map((doc) => ({ ...documentData(doc.id, doc.data() as Record<string, unknown>), catalogCardId: doc.id }))
   // Official cards are released only with their own finished GPT image. This
   // prevents the UI fallback art from ever making two cards look the same.
   return res.json({ cards: [...starterCards.filter((card) => Boolean(card.imageUrl)), ...communityCards] })

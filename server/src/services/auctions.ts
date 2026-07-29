@@ -6,6 +6,8 @@ const INITIAL_CREDITS = 1000
 const OPENING_BID = 20
 const MIN_INCREMENT = 5
 
+function profileName(value: unknown) { return String(value || 'Un giocatore') }
+
 export async function ensureWallet(userId: string) {
   const ref = db.collection('wallets').doc(userId)
   await db.runTransaction(async (transaction) => {
@@ -17,7 +19,7 @@ export async function ensureWallet(userId: string) {
 
 async function approvedCatalogCards() {
   const catalog = await db.collection('cardCatalog').get()
-  return catalog.docs.filter((card) => card.data().status !== 'PENDING' && card.data().status !== 'REJECTED').map((card) => ({ key: `custom:${card.id}`, ...card.data() }))
+  return catalog.docs.filter((card) => card.data().status !== 'REJECTED').map((card) => ({ key: `custom:${card.id}`, ...card.data() }))
 }
 
 export async function createEventAuctions(eventId: string, event: Record<string, unknown>) {
@@ -64,15 +66,12 @@ export async function placeBid(auctionId: string, userId: string, amount: number
     if (previousLeaderId && previousLeaderId !== userId) {
       if (priorWallet?.exists && priorWalletRef) transaction.update(priorWalletRef, { reserved: Math.max(0, Number(priorWallet.data()?.reserved ?? 0) - previousBid), updatedAt: new Date().toISOString() })
     }
-    const now = new Date().toISOString()
-    transaction.update(auctionRef, { currentBid: amount, leaderId: userId, leaderName: profileSnapshot.data()?.username ?? 'Giocatore', updatedAt: now })
+    const now = new Date().toISOString(); const leaderName = profileSnapshot.data()?.username ?? 'Giocatore'
+    transaction.update(auctionRef, { currentBid: amount, leaderId: userId, leaderName, updatedAt: now })
     transaction.set(auctionRef.collection('bids').doc(), { userId, amount, createdAt: now })
-    return { auction: { ...auction, id: auctionSnapshot.id, currentBid: amount, leaderId: userId }, previousLeaderId, previousBid }
+    return { auction: { ...auction, id: auctionSnapshot.id, currentBid: amount, leaderId: userId, leaderName }, previousLeaderId, previousBid }
   })
-  if (result.previousLeaderId && result.previousLeaderId !== userId) void notifyUser(result.previousLeaderId, { kind: 'AUCTION_OUTBID', title: `Sei stato superato · ${result.auction.title}`, message: `La nuova offerta è ${amount} crediti. Puoi rilanciare fino a un’ora prima dell’evento.`, path: `/events/${result.auction.eventId}` })
-  const history = await auctionRef.collection('bids').get()
-  const otherBidders = [...new Set(history.docs.map((bid) => String(bid.data().userId)).filter((id) => id !== userId && id !== result.previousLeaderId))]
-  void Promise.allSettled(otherBidders.map((id) => notifyUser(id, { kind: 'AUCTION_OUTBID', title: `Nuovo rilancio · ${result.auction.title}`, message: `L’offerta è salita a ${amount} crediti: l’asta resta aperta fino a un’ora prima dell’evento.`, path: `/events/${result.auction.eventId}` })))
+  void notifyGroupMembers(String(result.auction.groupId), { kind: 'AUCTION_OUTBID', title: `Nuova offerta · ${result.auction.title}`, message: `${profileName(result.auction.leaderName)} ha puntato ${amount} crediti. Apri l’evento per rilanciare prima della chiusura.`, path: `/events/${result.auction.eventId}` }, [userId])
   return result.auction
 }
 
