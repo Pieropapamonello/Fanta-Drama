@@ -5,6 +5,7 @@ import { db, documentData, groupRole } from '../services/firebase'
 import { notifyGroupMembers } from '../services/notifications'
 import { createDramaBeat } from '../services/drama-director'
 import { isPlatformAdmin } from '../services/platform-admin'
+import { createEventAuctions, sendAuctionReminder } from '../services/auctions'
 
 const router = Router()
 const schema = z.object({ title: z.string().trim().min(1).max(120), description: z.string().trim().max(1000).optional(), startsAt: z.string().datetime(), endsAt: z.string().datetime(), groupId: z.string().min(1), closePredictionsAt: z.string().datetime().optional(), imageUrl: z.string().url().max(2048).optional() })
@@ -36,11 +37,13 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
     const data = schema.parse(req.body)
     if (await groupRole(data.groupId, req.userId!) !== 'ADMIN' && !await isPlatformAdmin(req.userId!)) return res.status(403).json({ error: 'admin_required' })
     if (new Date(data.endsAt) <= new Date(data.startsAt)) return res.status(400).json({ error: 'invalid_dates' })
+    if (new Date(data.startsAt).getTime() < Date.now() + 60 * 60 * 1000) return res.status(400).json({ error: 'event_needs_one_hour_auction' })
     const ref = db.collection('events').doc()
     const event = { ...data, description: data.description ?? '', state: 'PRONOSTICI_APERTI', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
     await ref.set(event)
+    const auctionCount = await createEventAuctions(ref.id, event)
     void announceNewEvent(ref.id, event, req.userId!)
-    return res.status(201).json({ event: documentData(ref.id, event) })
+    return res.status(201).json({ event: { ...documentData(ref.id, event), auctionCount } })
   } catch (error: any) { return res.status(400).json({ error: error.message ?? 'invalid_event' }) }
 })
 
@@ -58,6 +61,7 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
 router.get('/:id', requireAuth, async (req: AuthRequest, res) => {
   const snapshot = await db.collection('events').doc(req.params.id).get()
   if (!snapshot.exists || (!await groupRole(snapshot.data()!.groupId, req.userId!) && !await isPlatformAdmin(req.userId!))) return res.status(404).json({ error: 'not_found' })
+  void sendAuctionReminder(snapshot.id)
   return res.json({ event: withPhase(snapshot.id, snapshot.data() as Record<string, unknown>) })
 })
 

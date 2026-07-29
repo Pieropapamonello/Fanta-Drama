@@ -6,7 +6,7 @@ export type NotificationPayload = {
   title: string
   message: string
   path?: string
-  kind: 'EVENT_CREATED' | 'EVENT_CLOSED' | 'SCORE_UPDATED'
+  kind: 'EVENT_CREATED' | 'EVENT_CLOSED' | 'SCORE_UPDATED' | 'AUCTION_OUTBID' | 'AUCTION_WON' | 'AUCTION_REMINDER' | 'CLAIM_NEEDS_VOTES' | 'CLAIM_CONFIRMED' | 'CLAIM_DENIED' | 'APPEAL_OPENED' | 'APPEAL_DECIDED'
 }
 
 export async function sendTelegramMessage(chatId: string | number, text: string, path = '/telegram-miniapp', extraButtons?: Array<Array<Record<string, string>>>) {

@@ -7,6 +7,8 @@ const router = Router()
 const schema = z.object({ eventId: z.string().min(1), cardId: z.string().min(1), value: z.unknown(), credits: z.number().int().min(0).max(100), joker: z.boolean().optional() })
 
 router.post('/', requireAuth, async (req: AuthRequest, res) => {
+  return res.status(410).json({ error: 'predictions_replaced_by_event_auctions' })
+  /* Legacy endpoint retained below for historical data compatibility.
   try {
     const data = schema.parse(req.body)
     const eventSnapshot = await db.collection('events').doc(data.eventId).get()
@@ -26,7 +28,7 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
     const prediction = { userId: req.userId!, ...data, joker: data.joker ?? false, resolved: false, points: null, createdAt: new Date().toISOString() }
     await db.collection('predictions').doc(predictionId).set(prediction)
     return res.status(previous.exists ? 200 : 201).json({ prediction: documentData(predictionId, prediction) })
-  } catch (error: any) { return res.status(400).json({ error: error.message ?? 'invalid_prediction' }) }
+  } catch (error: any) { return res.status(400).json({ error: error.message ?? 'invalid_prediction' }) } */
 })
 
 router.get('/event/:eventId', requireAuth, async (req: AuthRequest, res) => {

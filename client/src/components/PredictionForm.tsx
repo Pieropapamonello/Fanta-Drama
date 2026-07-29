@@ -1,41 +1,29 @@
 import React, { useEffect, useState } from 'react'
-import { useForm } from 'react-hook-form'
 import api from '../services/api'
 
 type Props = { eventId: string; phase?: string; closesAt?: string; onSaved?: () => void }
-type FormData = { cardId: string; value: string; credits: number }
 
-export default function PredictionForm({ eventId, phase, closesAt, onSaved }: Props) {
-  const { register, handleSubmit, watch, setValue } = useForm<FormData>({ defaultValues: { credits: 10, value: '' } })
-  const [cards, setCards] = useState<any[]>([])
-  const [message, setMessage] = useState('')
-  const [saving, setSaving] = useState(false)
-  const selectedId = watch('cardId')
-  const credits = watch('credits')
-  const closed = phase === 'CONCLUSO' || phase === 'PRONOSTICI_CHIUSI' || phase === 'IN_VALUTAZIONE'
+function timeLeft(value?: string) {
+  const seconds = Math.max(0, Math.ceil((new Date(value || '').getTime() - Date.now()) / 1000))
+  if (!seconds) return 'chiusa'
+  const hours = Math.floor(seconds / 3600); const minutes = Math.floor((seconds % 3600) / 60)
+  return hours ? `${hours}h ${minutes}m` : `${minutes} min`
+}
 
-  useEffect(() => { void api.get('/cards').then((response) => setCards(response.data.cards || [])).catch(() => setMessage('Non riesco a caricare il tuo mazzo.')) }, [])
-
-  const submit = async (data: FormData) => {
-    setSaving(true); setMessage('')
-    try {
-      await api.post('/predictions', { eventId, cardId: data.cardId, value: data.value, credits: Number(data.credits) })
-      setMessage('Pronostico salvato: la crew vedra il tuo coraggio al momento giusto.')
-      onSaved?.()
-    } catch (error: any) {
-      const code = error.response?.data?.error
-      setMessage(code === 'credits_exceeded' ? 'Puoi puntare al massimo 100 crediti per evento.' : code === 'predictions_closed' ? 'I pronostici per questo evento sono chiusi.' : 'Non riesco a salvare il pronostico. Riprova.')
-    } finally { setSaving(false) }
-  }
-
-  if (closed) return <section className="prediction-panel"><p className="eyebrow">Fase conclusa</p><h3>Pronostici chiusi</h3><p>Guarda la classifica per scoprire come e andata alla crew.</p></section>
-  return <section className="prediction-panel"><div><p className="eyebrow">La tua mossa</p><h3>Fai il tuo pronostico</h3><p>{closesAt ? `Hai tempo fino al ${new Date(closesAt).toLocaleString('it-IT')}.` : 'Scegli una carta dal tuo mazzo e punta i crediti.'}</p></div>
-    {!cards.length ? <p className="prediction-empty">Il tuo mazzo e vuoto. Apri Carte Drama e aggiungi una carta prima di pronosticare.</p> : <form onSubmit={handleSubmit(submit)}>
-      <div className="prediction-card-picker">{cards.map((card) => <button type="button" key={card.id} className={selectedId === card.id ? 'is-selected' : ''} onClick={() => setValue('cardId', card.id, { shouldValidate: true })}><img src={card.imageUrl} alt="" /><span><b>{card.title}</b><small>{card.basePoints} pt base</small></span></button>)}</div>
-      <label>La tua previsione<input className="input" {...register('value', { required: true, minLength: 2, maxLength: 120 })} placeholder="Es. il brindisi parte in ritardo" /></label>
-      <label className="credit-control">Crediti da puntare <b>{credits || 0}</b><input type="range" min="0" max="100" step="5" {...register('credits', { valueAsNumber: true })} /></label>
-      <button className="btn" disabled={saving || !selectedId}>{saving ? 'Salvataggio…' : 'Conferma pronostico'}</button>
-    </form>}
+export default function PredictionForm({ eventId, phase, onSaved }: Props) {
+  const [auctions, setAuctions] = useState<any[]>([]); const [claims, setClaims] = useState<any[]>([]); const [wallet, setWallet] = useState<any>(null)
+  const [amounts, setAmounts] = useState<Record<string, string>>({}); const [message, setMessage] = useState(''); const [working, setWorking] = useState(''); const [currentUserId, setCurrentUserId] = useState('')
+  const load = async () => { try { const [auctionData, claimData] = await Promise.all([api.get(`/auctions/event/${eventId}`), api.get(`/claims/event/${eventId}`)]); setAuctions(auctionData.data.auctions || []); setWallet(auctionData.data.wallet); setCurrentUserId(auctionData.data.currentUserId || ''); setClaims(claimData.data.claims || []) } catch { setMessage('Non riesco a caricare le aste in questo momento.') } }
+  useEffect(() => { void load(); const timer = window.setInterval(() => void load(), 30_000); return () => window.clearInterval(timer) }, [eventId])
+  const bid = async (auction: any) => { const amount = Number(amounts[auction.id]); setWorking(`bid-${auction.id}`); setMessage(''); try { await api.post(`/auctions/${auction.id}/bid`, { amount }); setMessage(`Offerta di ${amount} crediti registrata.`); await load(); onSaved?.() } catch (error: any) { const code = error.response?.data?.error; setMessage(code === 'insufficient_credits' ? 'Non hai abbastanza crediti disponibili per questa offerta.' : code === 'bid_too_low' ? `Devi offrire almeno ${(auction.leaderId ? auction.currentBid + auction.minIncrement : auction.openingBid)} crediti.` : code === 'auction_closed' ? 'L’asta è già chiusa.' : 'Non riesco a registrare il rilancio.') } finally { setWorking('') } }
+  const claim = async (auction: any) => { const note = window.prompt(`Descrivi cosa è successo per “${auction.title}” (facoltativo):`) ?? ''; setWorking(`claim-${auction.id}`); try { await api.post(`/claims/event/${eventId}`, { auctionId: auction.id, note }); setMessage('Richiesta inviata: servono due conferme o due negazioni.'); await load() } catch (error: any) { setMessage(error.response?.data?.error === 'claim_not_available' ? 'Puoi dichiarare la carta solo durante l’evento.' : 'Non riesco a inviare la richiesta.') } finally { setWorking('') } }
+  const vote = async (claim: any, decision: 'CONFIRM' | 'DENY') => { setWorking(`vote-${claim.id}`); try { await api.post(`/claims/${claim.id}/vote`, { vote: decision }); await load() } catch { setMessage('Non riesco a registrare il tuo voto.') } finally { setWorking('') } }
+  const appeal = async (claim: any) => { const message = window.prompt('Scrivi il motivo del ricorso:'); if (!message) return; setWorking(`appeal-${claim.id}`); try { await api.post(`/claims/${claim.id}/appeal`, { message }); setMessage('Ricorso inviato all’amministratore.'); await load() } catch { setMessage('Non riesco ad aprire il ricorso.') } finally { setWorking('') } }
+  const credits = Math.max(0, Number(wallet?.balance ?? 0) - Number(wallet?.reserved ?? 0))
+  const live = phase === 'LIVE'
+  return <section className="prediction-panel auction-panel"><div><p className="eyebrow">Mercato del caos</p><h3>Aste delle carte</h3><p><b>{credits}</b> crediti disponibili {wallet?.reserved ? `· ${wallet.reserved} in offerte` : ''}</p></div>
+    <div className="auction-grid">{auctions.map((auction) => { const minimum = auction.leaderId ? Number(auction.currentBid) + Number(auction.minIncrement) : Number(auction.openingBid); const owned = auction.status === 'WON' && auction.ownerId === currentUserId; return <article className={`auction-card ${auction.status !== 'OPEN' ? 'is-closed' : ''}`} key={auction.id}><img src={auction.imageUrl} alt="" /><div><small>{auction.rarity}</small><h4>{auction.title}</h4><p>{auction.description}</p><strong>{auction.currentBid ? `${auction.currentBid} crediti` : `Base ${auction.openingBid} crediti`}</strong><span>{auction.status === 'OPEN' ? `Chiude tra ${timeLeft(auction.closesAt)}` : auction.status === 'WON' ? `Vinta da ${auction.ownerName}` : 'Nessuna offerta'}</span>{auction.status === 'OPEN' && <div className="auction-bid"><input className="input" type="number" min={minimum} value={amounts[auction.id] ?? minimum} onChange={(event) => setAmounts((all) => ({ ...all, [auction.id]: event.target.value }))} /><button type="button" className="btn btn-ghost" disabled={working === `bid-${auction.id}`} onClick={() => void bid(auction)}>{working === `bid-${auction.id}` ? 'Invio…' : 'Rilancia'}</button></div>}{live && owned && <button type="button" className="btn btn-ghost" disabled={working === `claim-${auction.id}`} onClick={() => void claim(auction)}>Dichiara avvenuta</button>}</div></article> })}</div>
+    {claims.length > 0 && <div className="claim-board"><p className="eyebrow">Verifiche della crew</p>{claims.map((claim) => <article key={claim.id}><div><strong>{claim.cardTitle}</strong><span>{claim.claimantName} · {claim.status}</span>{claim.note && <p>{claim.note}</p>}<small>{claim.votes.filter((vote: any) => vote.vote === 'CONFIRM').length} conferme · {claim.votes.filter((vote: any) => vote.vote === 'DENY').length} negazioni</small></div>{claim.status === 'PENDING' && <div><button type="button" onClick={() => void vote(claim, 'CONFIRM')} disabled={working === `vote-${claim.id}`}>Conferma</button><button type="button" onClick={() => void vote(claim, 'DENY')} disabled={working === `vote-${claim.id}`}>Nega</button></div>}{['CONFIRMED', 'DENIED'].includes(claim.status) && <button type="button" onClick={() => void appeal(claim)} disabled={working === `appeal-${claim.id}`}>Ricorso</button>}</article>)}</div>}
     {message && <p className="prediction-message" role="status">{message}</p>}
   </section>
 }

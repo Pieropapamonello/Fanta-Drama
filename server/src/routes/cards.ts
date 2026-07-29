@@ -5,16 +5,22 @@ import { db, documentData } from '../services/firebase'
 import { starterCards } from '../data/starter-content'
 
 const router = Router()
+const auctionOnly = (_req: AuthRequest, res: any) => res.status(410).json({ error: 'cards_are_available_only_through_event_auctions' })
 const schema = z.object({
   title: z.string().trim().min(3).max(100), description: z.string().trim().min(12).max(500),
   rarity: z.enum(['COMMON', 'UNCOMMON', 'RARE', 'EPIC', 'LEGENDARY', 'MYTHIC']).optional(),
   type: z.enum(['YES_NO', 'PICK_CHARACTER', 'MULTI_CHOICE', 'NUMBER', 'RANGE', 'TIME', 'TEXT', 'FIRST_ACTION', 'ORDER']).optional(),
-  basePoints: z.number().int().min(0).max(100).optional(), imageUrl: z.string().url().max(2048), imageStoragePath: z.string().max(1024).optional()
+  imageUrl: z.string().url().max(2048), imageStoragePath: z.string().max(1024).optional()
 })
 
 function normalized(value: string) {
   return value.toLocaleLowerCase('it-IT').replace(/\s+/g, ' ').trim()
 }
+
+// Kept only to return an explicit response to older app versions: cards are no
+// longer copied into personal decks and can only be won in an event auction.
+router.post('/library/:slug', requireAuth, auctionOnly)
+router.post('/library/custom/:id', requireAuth, auctionOnly)
 
 async function addCatalogCardToDeck(userId: string, catalogId: string, catalogCard: Record<string, unknown>) {
   const existing = await db.collection('cards').where('authorId', '==', userId).where('catalogCardId', '==', catalogId).limit(1).get()
@@ -43,16 +49,15 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
     if (!sameImage.empty) return res.status(409).json({ error: 'card_image_already_exists' })
     const profile = await db.collection('users').doc(req.userId!).get()
     const ref = db.collection('cardCatalog').doc()
-    const card = { ...data, rarity: data.rarity ?? 'COMMON', type: data.type ?? 'YES_NO', basePoints: data.basePoints ?? 5, creatorId: req.userId!, creatorName: profile.data()?.username ?? 'Giocatore', normalizedTitle, normalizedDescription, createdAt: new Date().toISOString() }
+    const card = { ...data, rarity: data.rarity ?? 'COMMON', type: data.type ?? 'YES_NO', status: 'PENDING', creatorId: req.userId!, creatorName: profile.data()?.username ?? 'Giocatore', normalizedTitle, normalizedDescription, createdAt: new Date().toISOString() }
     await ref.set(card)
-    const deck = await addCatalogCardToDeck(req.userId!, ref.id, card)
-    return res.status(201).json({ card: deck.card, catalogCard: documentData(ref.id, card) })
+    return res.status(201).json({ catalogCard: documentData(ref.id, card) })
   } catch (error: any) { return res.status(400).json({ error: error.message ?? 'invalid_card' }) }
 })
 
 router.get('/library', requireAuth, async (_req, res) => {
   const catalog = await db.collection('cardCatalog').orderBy('createdAt', 'desc').get()
-  const communityCards = catalog.docs.map((doc) => ({ ...documentData(doc.id, doc.data() as Record<string, unknown>), catalogCardId: doc.id }))
+  const communityCards = catalog.docs.filter((doc) => doc.data().status !== 'PENDING' && doc.data().status !== 'REJECTED').map((doc) => ({ ...documentData(doc.id, doc.data() as Record<string, unknown>), catalogCardId: doc.id }))
   // Official cards are released only with their own finished GPT image. This
   // prevents the UI fallback art from ever making two cards look the same.
   return res.json({ cards: [...starterCards.filter((card) => Boolean(card.imageUrl)), ...communityCards] })

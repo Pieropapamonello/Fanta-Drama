@@ -5,10 +5,12 @@ import { db, documentData, firebaseAuth, groupRole } from '../services/firebase'
 import { closeAndScoreEvent } from '../services/scoring'
 import { grantPlatformAdmin, isPlatformAdmin, isValidAdminPassword, revokePlatformAdmin } from '../services/platform-admin'
 import { deleteDropboxAsset } from '../services/assets'
+import { rewardClaim } from './claims'
 
 const router = Router()
 const passwordSchema = z.object({ password: z.string().min(1).max(256) })
 const mergeSchema = z.object({ primaryId: z.string().min(1), secondaryId: z.string().min(1) }).refine((value) => value.primaryId !== value.secondaryId)
+const appealDecisionSchema = z.object({ decision: z.enum(['CONFIRMED', 'DENIED']), note: z.string().trim().max(1000).optional() })
 
 async function requirePlatformAdmin(req: AuthRequest, res: any, next: any) {
   if (!req.userId || !await isPlatformAdmin(req.userId)) return res.status(403).json({ error: 'platform_admin_required' })
@@ -45,15 +47,23 @@ router.post('/lock', requireAuth, async (req: AuthRequest, res) => {
 })
 
 router.get('/overview', requireAuth, requirePlatformAdmin, async (_req, res) => {
-  const [groups, users, events, cards] = await Promise.all([db.collection('groups').get(), db.collection('users').get(), db.collection('events').get(), db.collection('cardCatalog').get()])
+  const [groups, users, events, cards, appeals] = await Promise.all([db.collection('groups').get(), db.collection('users').get(), db.collection('events').get(), db.collection('cardCatalog').get(), db.collection('appeals').where('status', '==', 'OPEN').get()])
   const groupNames = new Map(groups.docs.map((group) => [group.id, String(group.data().name ?? 'Gruppo senza nome')]))
   return res.json({
     stats: { groups: groups.size, users: users.size, events: events.size, cards: cards.size },
     groups: groups.docs.map((group) => documentData(group.id, { ...group.data(), memberCount: Array.isArray(group.data().memberIds) ? group.data().memberIds.length : 0 })),
     events: events.docs.map((event) => documentData(event.id, { ...event.data(), groupName: groupNames.get(String(event.data().groupId)) ?? 'Gruppo eliminato' })),
     users: users.docs.map((user) => documentData(user.id, user.data() as Record<string, unknown>)),
-    cards: cards.docs.map((card) => documentData(card.id, card.data() as Record<string, unknown>))
+    cards: cards.docs.map((card) => documentData(card.id, card.data() as Record<string, unknown>)),
+    appeals: appeals.docs.map((appeal) => documentData(appeal.id, appeal.data() as Record<string, unknown>))
   })
+})
+
+router.post('/cards/:id/review', requireAuth, requirePlatformAdmin, async (req: AuthRequest, res) => {
+  const decision = z.object({ status: z.enum(['APPROVED', 'REJECTED']) }).parse(req.body)
+  const card = await db.collection('cardCatalog').doc(req.params.id).get(); if (!card.exists) return res.status(404).json({ error: 'card_not_found' })
+  await card.ref.update({ status: decision.status, reviewedBy: req.userId, reviewedAt: new Date().toISOString() })
+  return res.json({ ok: true, status: decision.status })
 })
 
 router.delete('/cards/:id', requireAuth, requirePlatformAdmin, async (req: AuthRequest, res) => {
@@ -63,6 +73,18 @@ router.delete('/cards/:id', requireAuth, requirePlatformAdmin, async (req: AuthR
   const batch = db.batch(); copies.docs.forEach((copy) => batch.delete(copy.ref)); batch.delete(card.ref); await batch.commit()
   const deletion = await deleteDropboxAsset(typeof card.data()?.imageStoragePath === 'string' ? card.data()?.imageStoragePath : undefined)
   return res.json({ ok: true, removedDeckCopies: copies.size, asset: deletion })
+})
+
+router.post('/appeals/:id/decision', requireAuth, requirePlatformAdmin, async (req: AuthRequest, res) => {
+  try {
+    const data = appealDecisionSchema.parse(req.body); const appeal = await db.collection('appeals').doc(req.params.id).get()
+    if (!appeal.exists || appeal.data()?.status !== 'OPEN') return res.status(404).json({ error: 'appeal_not_found' })
+    const claim = await db.collection('cardClaims').doc(String(appeal.data()?.claimId)).get(); if (!claim.exists) return res.status(404).json({ error: 'claim_not_found' })
+    const now = new Date().toISOString(); await appeal.ref.update({ status: 'DECIDED', decision: data.decision, note: data.note ?? '', decidedBy: req.userId, decidedAt: now }); await claim.ref.update({ status: data.decision, resolvedAt: now, resolvedBy: req.userId, updatedAt: now })
+    if (data.decision === 'CONFIRMED') await rewardClaim(claim.ref, { ...claim.data()!, status: 'CONFIRMED' })
+    const { notifyUser } = await import('../services/notifications'); await notifyUser(String(claim.data()?.userId), { kind: 'APPEAL_DECIDED', title: 'Ricorso deciso', message: data.decision === 'CONFIRMED' ? 'L’amministratore ha confermato la tua carta.' : 'L’amministratore ha confermato la negazione della carta.', path: `/events/${claim.data()?.eventId}` })
+    return res.json({ ok: true, decision: data.decision })
+  } catch (error: any) { return res.status(400).json({ error: error.message ?? 'appeal_decision_failed' }) }
 })
 
 router.post('/users/merge', requireAuth, requirePlatformAdmin, async (req: AuthRequest, res) => {

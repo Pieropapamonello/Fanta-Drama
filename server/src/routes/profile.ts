@@ -3,6 +3,7 @@ import { z } from 'zod'
 import crypto from 'crypto'
 import { requireAuth, AuthRequest } from '../middleware/auth'
 import { db, documentData, firebaseAuth } from '../services/firebase'
+import { ensureWallet } from '../services/auctions'
 
 const router = Router()
 const avatars = ['/characters/pulse.png', '/characters/mischief.png', '/characters/shock.png', '/characters/calm.png', '/avatars/common/violet-curly.png', '/avatars/common/silver-blue.png'] as const
@@ -27,11 +28,11 @@ router.get('/me', requireAuth, async (req: AuthRequest, res) => {
 
 router.get('/overview', requireAuth, async (req: AuthRequest, res) => {
   const userId = req.userId!
-  const [groups, cards, scores, notifications] = await Promise.all([
+  const [groups, cards, scores, notifications, wallet] = await Promise.all([
     db.collection('groups').where('memberIds', 'array-contains', userId).get(),
     db.collection('cards').where('authorId', '==', userId).get(),
     db.collection('scores').where('userId', '==', userId).get(),
-    db.collection('notifications').where('userId', '==', userId).get()
+    db.collection('notifications').where('userId', '==', userId).get(), ensureWallet(userId)
   ])
   const groupIds = new Set(groups.docs.map((group) => group.id))
   const allEvents = await db.collection('events').get()
@@ -45,7 +46,7 @@ router.get('/overview', requireAuth, async (req: AuthRequest, res) => {
     .sort((left, right) => String(right.createdAt ?? '').localeCompare(String(left.createdAt ?? '')))
     .slice(0, 4)
   return res.json({
-    stats: { groups: groups.size, cards: cards.size, points: scores.docs.reduce((total, score) => total + Number(score.data().points ?? 0), 0) },
+    stats: { groups: groups.size, cards: cards.size, credits: Math.max(0, Number(wallet.data()?.balance ?? 1000) - Number(wallet.data()?.reserved ?? 0)), reservedCredits: Number(wallet.data()?.reserved ?? 0) },
     nextEvents, recentNotifications
   })
 })

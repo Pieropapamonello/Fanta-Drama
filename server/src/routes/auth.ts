@@ -103,7 +103,7 @@ router.post('/bootstrap', requireAuth, async (req: AuthRequest, res) => {
       const baseUsername = username ?? userRecord.email?.split('@')[0] ?? 'Giocatore'
       const duplicate = await db.collection('users').where('username', '==', baseUsername).limit(1).get()
       const finalUsername = duplicate.empty ? baseUsername : `${baseUsername}-${req.userId!.slice(0, 5)}`
-      const user = { username: finalUsername, email: userRecord.email ?? '', avatar: null, bio: '', city: '', crewRole: 'Jolly', motto: '', notificationPreference: 'BOTH', profileCompleted: false, createdAt: new Date().toISOString() }
+      const user = { username: finalUsername, email: userRecord.email ?? '', avatar: null, bio: '', city: '', crewRole: 'Jolly', motto: '', notificationPreference: 'BOTH', credits: 1000, profileCompleted: false, createdAt: new Date().toISOString() }
       await ref.set(user)
       return res.status(201).json({ user: documentData(req.userId!, user) })
     }

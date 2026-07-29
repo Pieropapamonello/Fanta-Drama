@@ -1,7 +1,8 @@
 import React, { FormEvent, useCallback, useEffect, useState } from 'react'
 import api from '../services/api'
+import AdminModeration from '../components/AdminModeration'
 
-type Overview = { stats: { users: number, groups: number, events: number, cards: number }, groups: any[], events: any[], users: any[], cards: any[] }
+type Overview = { stats: { users: number, groups: number, events: number, cards: number }, groups: any[], events: any[], users: any[], cards: any[], appeals: any[] }
 
 export default function AdminConsole() {
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null)
@@ -83,6 +84,7 @@ export default function AdminConsole() {
       <section className="admin-panel admin-users"><h3>Utenti registrati</h3><div className="admin-user-list">{overview.users.map((user) => <span key={user.id}>{user.avatar ? <img src={user.avatar} alt="" /> : <i>{String(user.username || '?').slice(0, 1).toUpperCase()}</i>}{user.username || 'Senza nome'}</span>)}</div></section>
       <section className="admin-panel admin-merge"><h3>Unisci due profili</h3><p>Usa questa funzione quando la stessa persona ha un account e-mail e uno Telegram. Il primo profilo viene mantenuto; il secondo diventa un accesso collegato.</p><div><select className="input" value={primaryUserId} onChange={(event) => setPrimaryUserId(event.target.value)}><option value="">Profilo da mantenere</option>{overview.users.filter((user) => !user.mergedInto).map((user) => <option value={user.id} key={user.id}>{user.username || user.id}</option>)}</select><select className="input" value={secondaryUserId} onChange={(event) => setSecondaryUserId(event.target.value)}><option value="">Profilo da assorbire</option>{overview.users.filter((user) => !user.mergedInto).map((user) => <option value={user.id} key={user.id}>{user.username || user.id}</option>)}</select><button type="button" className="admin-danger" onClick={() => void mergeUsers()} disabled={working === 'merge-users'}>{working === 'merge-users' ? 'Unisco...' : 'Unisci profili'}</button></div></section>
     </>}
+    {overview && <AdminModeration cards={overview.cards} appeals={overview.appeals || []} onChanged={() => void load()} />}
     {notice && <p className="admin-notice">{notice}</p>}
   </section>
 }
