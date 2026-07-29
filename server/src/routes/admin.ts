@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import { requireAuth, AuthRequest } from '../middleware/auth'
-import { db, documentData, groupRole } from '../services/firebase'
+import { db, documentData, firebaseAuth, groupRole } from '../services/firebase'
 import { closeAndScoreEvent } from '../services/scoring'
 import { grantPlatformAdmin, isPlatformAdmin, isValidAdminPassword, revokePlatformAdmin } from '../services/platform-admin'
 import { deleteDropboxAsset } from '../services/assets'
@@ -15,6 +15,19 @@ async function requirePlatformAdmin(req: AuthRequest, res: any, next: any) {
 }
 
 router.get('/status', requireAuth, async (req: AuthRequest, res) => res.json({ isAdmin: await isPlatformAdmin(req.userId!) }))
+
+// A separate, password-only Firebase identity is used for the administration
+// console. It never requires or promotes a player account.
+router.post('/password-login', async (req, res) => {
+  const configured = process.env.ADMIN_PASSWORD
+  if (!configured) return res.status(503).json({ error: 'admin_password_not_configured' })
+  const { password } = passwordSchema.parse(req.body)
+  if (!isValidAdminPassword(password)) return res.status(401).json({ error: 'invalid_admin_password' })
+  const adminId = 'fantadrama_platform_admin'
+  await grantPlatformAdmin(adminId, 'PASSWORD')
+  const customToken = await firebaseAuth.createCustomToken(adminId, { platformAdmin: true })
+  return res.json({ customToken })
+})
 
 router.post('/unlock', requireAuth, async (req: AuthRequest, res) => {
   const configured = process.env.ADMIN_PASSWORD

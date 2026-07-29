@@ -22,6 +22,7 @@ import TelegramLogin from './pages/TelegramLogin'
 import TelegramMiniApp from './pages/TelegramMiniApp'
 import ProfileSetup from './pages/ProfileSetup'
 import AdminConsole from './pages/AdminConsole'
+import AdminLogin from './pages/AdminLogin'
 import Notifications from './pages/Notifications'
 
 function Header() {
@@ -57,7 +58,8 @@ export default function App() {
       <Route path="/telegram-miniapp" element={<TelegramMiniApp />} />
       <Route path="/profile/setup" element={<ProtectedRoute><ProfileSetup /></ProtectedRoute>} />
       <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
-      <Route path="/admin" element={<ProtectedRoute><AdminConsole /></ProtectedRoute>} />
+      <Route path="/admin" element={<AdminLogin />} />
+      <Route path="/admin/console" element={<ProtectedRoute><AdminConsole /></ProtectedRoute>} />
       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/groups" element={<ProtectedRoute><GroupsList /></ProtectedRoute>} />
       <Route path="/groups/create" element={<ProtectedRoute><CreateGroup /></ProtectedRoute>} />

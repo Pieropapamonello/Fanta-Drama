@@ -17,7 +17,7 @@ export async function isPlatformAdmin(userId: string) {
   return (await db.collection('platformAdmins').doc(userId).get()).exists
 }
 
-export async function grantPlatformAdmin(userId: string, source: 'WEB' | 'TELEGRAM') {
+export async function grantPlatformAdmin(userId: string, source: 'WEB' | 'TELEGRAM' | 'PASSWORD') {
   await db.collection('platformAdmins').doc(userId).set({ userId, source, grantedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, { merge: true })
 }
 
