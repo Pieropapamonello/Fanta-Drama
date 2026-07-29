@@ -1,4 +1,5 @@
 @tailwind base;
+.device-push-card { display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:.7rem; margin:1rem 0; padding:.85rem; border:1px solid rgba(105,219,255,.28); border-radius:.9rem; background:linear-gradient(120deg,rgba(47,181,255,.1),rgba(121,78,255,.12)); }.device-push-card>svg { color:#86e7ff; }.device-push-card>div { display:grid; gap:.15rem; }.device-push-card strong { color:#fff; font-size:.82rem; }.device-push-card span,.device-push-card small { color:#b9b4d1; font-size:.69rem; line-height:1.35; }.device-push-card .btn { min-height:2.35rem; padding:.48rem .65rem; font-size:.7rem; }.device-push-card small { grid-column:2/-1; color:#bceeff; } @media (max-width:560px) { .device-push-card { grid-template-columns:auto 1fr; }.device-push-card .btn { grid-column:1/-1; width:100%; }.device-push-card small { grid-column:1/-1; } }
 @tailwind components;
 @tailwind utilities;
 

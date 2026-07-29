@@ -1,7 +1,7 @@
 import React from 'react'
 import { Routes, Route, Link, NavLink, useNavigate } from 'react-router-dom'
 import { signOut } from 'firebase/auth'
-import { CalendarDays, Home, Layers, LogOut, User, Users } from 'lucide-react'
+import { CalendarDays, Home, Layers, LogOut, User, Users, X } from 'lucide-react'
 import { firebaseAuth } from './services/firebase'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
@@ -26,6 +26,7 @@ import AdminLogin from './pages/AdminLogin'
 import Notifications from './pages/Notifications'
 import PwaInstallPrompt from './components/PwaInstallPrompt'
 import BrandMark from './components/BrandMark'
+import { listenToForegroundPush } from './services/push'
 
 function Header() {
   const navigate = useNavigate()
@@ -35,8 +36,15 @@ function Header() {
     localStorage.removeItem('fd_token')
     navigate('/')
   }
+  const telegramApp = (window as any).Telegram?.WebApp
+  const exitApp = () => {
+    if (telegramApp?.close) { telegramApp.close(); return }
+    if (loggedIn) { void logout(); return }
+    navigate('/')
+  }
+  const exitLabel = telegramApp?.initData ? 'Chiudi' : loggedIn ? 'Esci' : 'Chiudi'
   return <header className="app-header"><div className="app-header-inner">
-    <Link to="/" className="brand" onDoubleClick={(event) => { event.preventDefault(); navigate('/admin') }}><BrandMark />FantaDrama</Link>{loggedIn && <button type="button" className="mobile-exit" onClick={logout}><LogOut size={15} /> Esci</button>}
+    <Link to="/" className="brand" onDoubleClick={(event) => { event.preventDefault(); navigate('/admin') }}><BrandMark />FantaDrama</Link><button type="button" className="mobile-exit" onClick={exitApp} aria-label={exitLabel}>{telegramApp?.initData ? <X size={16} /> : <LogOut size={15} />}{exitLabel}</button>
     <nav className="nav-links">{loggedIn ? <>
       <Link to="/dashboard">Dashboard</Link><Link to="/groups">Gruppi</Link><Link to="/events">Eventi</Link><Link to="/cards">Carte</Link><Link to="/notifications">Notifiche</Link><Link to="/profile/setup">Profilo</Link><button type="button" onClick={logout}>Esci</button>
     </> : <><Link to="/login">Accedi</Link><Link to="/register">Registrati</Link></>}</nav>
@@ -50,6 +58,11 @@ function MobileNav() {
 }
 
 export default function App() {
+  React.useEffect(() => {
+    let unsubscribe: (() => void) | undefined
+    void listenToForegroundPush().then((stop) => { unsubscribe = stop })
+    return () => unsubscribe?.()
+  }, [])
   return <div className="app-shell"><PwaInstallPrompt />
     <Header />
     <main className="app-main"><Routes>

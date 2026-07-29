@@ -26,7 +26,8 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       connectSrc: ["'self'", 'https://identitytoolkit.googleapis.com', 'https://securetoken.googleapis.com', 'https://www.googleapis.com'],
-      scriptSrc: ["'self'", 'https://telegram.org'],
+      scriptSrc: ["'self'", 'https://telegram.org', 'https://www.gstatic.com'],
+      workerSrc: ["'self'"],
       frameSrc: ["'self'", 'https://oauth.telegram.org', 'https://telegram.org'],
       imgSrc: ["'self'", 'data:', 'https:'],
       styleSrc: ["'self'", "'unsafe-inline'", 'https:']

@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
-import { Check, MapPin, Sparkles } from 'lucide-react'
+import { BellRing, Check, MapPin, Sparkles } from 'lucide-react'
 import api from '../services/api'
 import { useNavigate } from 'react-router-dom'
 import { EmailAuthProvider, linkWithCredential } from 'firebase/auth'
 import { firebaseAuth } from '../services/firebase'
 import { setAuthToken } from '../services/api'
 import ImageForge from '../components/ImageForge'
+import { enableDeviceNotifications } from '../services/push'
 
 const avatars = [
   { value: '/characters/pulse.png', title: 'On fire', note: 'Sempre al centro della scena' },
@@ -33,6 +34,8 @@ export default function ProfileSetup() {
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
   const [extraAvatars, setExtraAvatars] = useState<any[]>([])
   const [generatingAvatar, setGeneratingAvatar] = useState('')
+  const [isEnablingPush, setIsEnablingPush] = useState(false)
+  const [pushMessage, setPushMessage] = useState('')
   const avatar = watch('avatar')
   const notificationPreference = watch('notificationPreference')
 
@@ -110,6 +113,11 @@ export default function ProfileSetup() {
     } finally { setIsSaving(false) }
   }
 
+  const enablePush = async () => {
+    setIsEnablingPush(true); setPushMessage('')
+    try { const result = await enableDeviceNotifications(); setPushMessage(result.message) } finally { setIsEnablingPush(false) }
+  }
+
   if (isLoading) return <div className="empty-state">Sto preparando il tuo profilo…</div>
   return <form className="profile-setup" onSubmit={handleSubmit(onSubmit)}>
     <div className="profile-setup-copy"><p className="eyebrow">Il tuo alter ego</p><h2>Crea il tuo personaggio</h2><p>Queste informazioni saranno visibili solo nella tua esperienza FantaDrama. Puoi modificarle quando vuoi.</p></div>
@@ -122,7 +130,7 @@ export default function ProfileSetup() {
     <section className="connection-section"><div className="profile-section-title"><Sparkles size={17} /><div><strong>Account e notifiche</strong><span>Collega i canali che vuoi usare</span></div></div><div className="connection-grid">
       <div className={`connection-card ${profile?.connections?.email ? 'is-connected' : ''}`}><b>✉ E-mail</b>{profile?.connections?.email ? <><span>{profile.email}</span><small>Collegata</small></> : <><input className="input" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="nome@email.it" type="email" /><input className="input" value={emailPassword} onChange={(event) => setEmailPassword(event.target.value)} placeholder="Crea una password" type="password" /><button type="button" className="btn btn-ghost" onClick={connectEmail} disabled={isLinkingEmail}>{isLinkingEmail ? 'Collegamento…' : 'Collega e-mail'}</button></>}</div>
       <div className={`connection-card ${profile?.connections?.telegram ? 'is-connected' : ''}`}><b>✈ Telegram</b>{profile?.connections?.telegram ? <><span>@{profile.username || 'FantaDrama'}</span><small>Collegato</small></> : <><span>Ricevi gli aggiornamenti direttamente dal bot.</span><button type="button" className="btn btn-ghost" onClick={connectTelegram}>Collega Telegram</button></>}</div>
-    </div><div className="notification-choice"><strong>Dove vuoi ricevere le notifiche?</strong><span>Puoi cambiare scelta quando vuoi. L’app conserva sempre lo storico.</span><div><button type="button" className={notificationPreference === 'IN_APP' ? 'is-selected' : ''} onClick={() => setValue('notificationPreference', 'IN_APP')}>Solo nell’app</button><button type="button" className={notificationPreference === 'TELEGRAM' ? 'is-selected' : ''} onClick={() => setValue('notificationPreference', 'TELEGRAM')} disabled={!profile?.connections?.telegram}>Solo Telegram</button><button type="button" className={notificationPreference === 'EMAIL' ? 'is-selected' : ''} onClick={() => setValue('notificationPreference', 'EMAIL')} disabled={!profile?.connections?.email}>Solo e-mail</button><button type="button" className={notificationPreference === 'BOTH' ? 'is-selected' : ''} onClick={() => setValue('notificationPreference', 'BOTH')} disabled={!profile?.connections?.email || !profile?.connections?.telegram}>Telegram + e-mail</button><button type="button" className={notificationPreference === 'ALL' ? 'is-selected' : ''} onClick={() => setValue('notificationPreference', 'ALL')}>Tutti i canali</button></div></div>{contactMessage && <p className="contact-message" role="status">{contactMessage}</p>}</section>
+    </div><div className="device-push-card"><BellRing size={18} /><div><strong>Avvisi sul telefono</strong><span>Autorizza FantaDrama a mostrarti notifiche anche fuori dall’app.</span></div><button type="button" className="btn btn-ghost" onClick={() => void enablePush()} disabled={isEnablingPush}>{isEnablingPush ? 'Attivazione…' : 'Attiva avvisi'}</button>{pushMessage && <small role="status">{pushMessage}</small>}</div><div className="notification-choice"><strong>Dove vuoi ricevere le notifiche?</strong><span>Puoi cambiare scelta quando vuoi. L’app conserva sempre lo storico.</span><div><button type="button" className={notificationPreference === 'IN_APP' ? 'is-selected' : ''} onClick={() => setValue('notificationPreference', 'IN_APP')}>Solo nell’app</button><button type="button" className={notificationPreference === 'TELEGRAM' ? 'is-selected' : ''} onClick={() => setValue('notificationPreference', 'TELEGRAM')} disabled={!profile?.connections?.telegram}>Solo Telegram</button><button type="button" className={notificationPreference === 'EMAIL' ? 'is-selected' : ''} onClick={() => setValue('notificationPreference', 'EMAIL')} disabled={!profile?.connections?.email}>Solo e-mail</button><button type="button" className={notificationPreference === 'BOTH' ? 'is-selected' : ''} onClick={() => setValue('notificationPreference', 'BOTH')} disabled={!profile?.connections?.email || !profile?.connections?.telegram}>Telegram + e-mail</button><button type="button" className={notificationPreference === 'ALL' ? 'is-selected' : ''} onClick={() => setValue('notificationPreference', 'ALL')}>Tutti i canali</button></div></div>{contactMessage && <p className="contact-message" role="status">{contactMessage}</p>}</section>
     {error && <p className="profile-error" role="alert">{error}</p>}
     <button className="btn profile-save" disabled={isSaving}>{isSaving ? 'Salvataggio in corso…' : 'Entra nella drama room'}</button>
   </form>

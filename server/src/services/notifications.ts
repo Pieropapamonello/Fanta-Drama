@@ -1,4 +1,5 @@
-import { db } from './firebase'
+import { getMessaging } from 'firebase-admin/messaging'
+import { db, firebaseApp } from './firebase'
 
 const appUrl = 'https://fanta-drama.onrender.com'
 
@@ -43,6 +44,23 @@ async function sendEmail(email: string, payload: NotificationPayload) {
   return { channel: 'email', status: response.ok ? 'sent' : 'failed' }
 }
 
+async function sendDevicePush(userId: string, payload: NotificationPayload) {
+  const subscriptions = await db.collection('pushSubscriptions').where('userId', '==', userId).get()
+  if (subscriptions.empty) return { channel: 'device', status: 'pending_permission' }
+  const deliveries = await Promise.all(subscriptions.docs.map(async (subscription) => {
+    const token = String(subscription.data().token ?? '')
+    if (!token) return 'failed'
+    try {
+      await getMessaging(firebaseApp).send({ token, notification: { title: payload.title, body: payload.message }, data: { path: payload.path ?? '/dashboard' }, webpush: { fcmOptions: { link: `${appUrl}${payload.path ?? '/dashboard'}` } } })
+      return 'sent'
+    } catch (error: any) {
+      if (String(error?.code ?? '').includes('registration-token-not-registered')) await subscription.ref.delete()
+      return 'failed'
+    }
+  }))
+  return { channel: 'device', status: deliveries.includes('sent') ? 'sent' : 'failed' }
+}
+
 export async function notifyUser(userId: string, payload: NotificationPayload) {
   const [userSnapshot, linkSnapshot] = await Promise.all([
     db.collection('users').doc(userId).get(),
@@ -52,6 +70,7 @@ export async function notifyUser(userId: string, payload: NotificationPayload) {
   const link = linkSnapshot.exists ? linkSnapshot.data()! : {}
   const preference = ['IN_APP', 'TELEGRAM', 'EMAIL', 'BOTH', 'ALL'].includes(String(user.notificationPreference)) ? String(user.notificationPreference) : 'ALL'
   const results: Array<{ channel: string, status: string }> = [{ channel: 'in_app', status: 'stored' }]
+  if (preference === 'IN_APP' || preference === 'ALL') results.push(await sendDevicePush(userId, payload))
   if ((preference === 'TELEGRAM' || preference === 'BOTH' || preference === 'ALL') && link.chatId) {
     try {
       await sendTelegramMessage(String(link.chatId), `✨ ${payload.title}\n\n${payload.message}`, payload.path ?? '/dashboard')

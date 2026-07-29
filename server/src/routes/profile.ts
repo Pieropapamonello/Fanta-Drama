@@ -12,6 +12,7 @@ const profileSchema = z.object({
   crewRole: z.enum(['Stratega', 'Creatore di caos', 'Osservatore', 'Regista del drama', 'Jolly']).optional(), motto: z.string().trim().max(90).optional(),
   notificationPreference: z.enum(['IN_APP', 'TELEGRAM', 'EMAIL', 'BOTH', 'ALL']).optional(),
 })
+const pushSubscriptionSchema = z.object({ token: z.string().min(40).max(4096), platform: z.string().max(40).optional() })
 
 async function profileWithConnections(userId: string) {
   const [snapshot, authUser, link] = await Promise.all([db.collection('users').doc(userId).get(), firebaseAuth.getUser(userId), db.collection('telegramLinks').doc(userId).get()])
@@ -61,6 +62,16 @@ router.post('/notifications/read', requireAuth, async (req: AuthRequest, res) =>
   const snapshot = await db.collection('notifications').where('userId', '==', req.userId!).get()
   const batch = db.batch(); snapshot.docs.forEach((item) => batch.update(item.ref, { readAt: new Date().toISOString() })); await batch.commit()
   return res.json({ ok: true })
+})
+
+router.post('/push-subscriptions', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const data = pushSubscriptionSchema.parse(req.body)
+    const existing = await db.collection('pushSubscriptions').where('token', '==', data.token).limit(1).get()
+    const ref = existing.empty ? db.collection('pushSubscriptions').doc() : existing.docs[0].ref
+    await ref.set({ userId: req.userId!, token: data.token, platform: data.platform ?? 'web', updatedAt: new Date().toISOString() }, { merge: true })
+    return res.json({ ok: true })
+  } catch (error: any) { return res.status(400).json({ error: error.message ?? 'invalid_push_subscription' }) }
 })
 
 router.put('/me', requireAuth, async (req: AuthRequest, res) => {
