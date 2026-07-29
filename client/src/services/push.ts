@@ -34,6 +34,7 @@ export async function enableDeviceNotifications() {
     if (code.includes('failed-service-worker-registration')) return { ok: false, message: 'Il servizio notifiche del browser non si è avviato. Chiudi e riapri l’app, poi riprova.' }
     if (code.includes('token-subscribe-failed')) return { ok: false, message: 'Firebase ha rifiutato la registrazione push. Verifica che “FCM Registration API” sia abilitata nel progetto Firebase.' }
     if (code.includes('permission-blocked')) return { ok: false, message: 'Il browser sta ancora bloccando le notifiche per questo sito.' }
+    if (detail.toLowerCase().includes('failed to fetch')) return { ok: false, message: 'Brave sta bloccando Firebase Push. Disattiva Shields per FantaDrama oppure attiva gli avvisi da Chrome.' }
     return { ok: false, message: `Non riesco a registrare il telefono alle notifiche${code ? ` (${code})` : ''}${detail ? `: ${detail}` : ''}` }
   }
 }

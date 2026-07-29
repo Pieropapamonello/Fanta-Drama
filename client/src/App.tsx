@@ -1,6 +1,6 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { Routes, Route, Link, NavLink, useNavigate } from 'react-router-dom'
-import { signOut } from 'firebase/auth'
+import { onAuthStateChanged, signOut } from 'firebase/auth'
 import { CalendarDays, Home, Layers, LogOut, User, Users, X } from 'lucide-react'
 import { firebaseAuth } from './services/firebase'
 import Landing from './pages/Landing'
@@ -28,9 +28,15 @@ import PwaInstallPrompt from './components/PwaInstallPrompt'
 import BrandMark from './components/BrandMark'
 import { listenToForegroundPush } from './services/push'
 
+function useLoggedIn() {
+  const [loggedIn, setLoggedIn] = useState(Boolean(localStorage.getItem('fd_token')))
+  useEffect(() => onAuthStateChanged(firebaseAuth, (user) => setLoggedIn(Boolean(user) || Boolean(localStorage.getItem('fd_token')))), [])
+  return loggedIn
+}
+
 function Header() {
   const navigate = useNavigate()
-  const loggedIn = Boolean(localStorage.getItem('fd_token'))
+  const loggedIn = useLoggedIn()
   const logout = async () => {
     await signOut(firebaseAuth)
     localStorage.removeItem('fd_token')
@@ -52,7 +58,8 @@ function Header() {
 }
 
 function MobileNav() {
-  if (!localStorage.getItem('fd_token')) return null
+  const loggedIn = useLoggedIn()
+  if (!loggedIn) return null
   const items = [[Home, '/dashboard', 'Home'], [Users, '/groups', 'Crew'], [CalendarDays, '/events', 'Eventi'], [Layers, '/cards', 'Carte'], [User, '/profile/setup', 'Profilo']] as const
   return <nav className="mobile-nav" aria-label="Navigazione principale">{items.map(([Icon, to, label]) => <NavLink key={to} to={to}><Icon size={19} /><span>{label}</span></NavLink>)}</nav>
 }
