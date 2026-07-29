@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { db } from '../services/firebase'
 import { grantPlatformAdmin, isPlatformAdmin, isValidAdminPassword } from '../services/platform-admin'
+import { mergeProfiles } from '../services/profile-merge'
 
 const router = Router()
 const appUrl = 'https://fanta-drama.onrender.com/telegram-miniapp'
@@ -60,14 +61,15 @@ async function completeTelegramLink(chatId: string | number, from: TelegramUser,
   const data = request.data()
   if (!request.exists || !data?.userId || data.usedAt || new Date(data.expiresAt).getTime() < Date.now()) return telegramApi('sendMessage', { chat_id: chatId, text: 'Questo link non e piu valido. Torna nel profilo FantaDrama e creane uno nuovo.' })
   const links = await db.collection('telegramLinks').where('telegramUserId', '==', String(from.id)).limit(1).get()
+  let merged = false
   if (!links.empty && links.docs[0].id !== data.userId) {
     const existingUser = await db.collection('users').doc(links.docs[0].id).get()
-    if (existingUser.exists) return telegramApi('sendMessage', { chat_id: chatId, text: 'Questo account Telegram e gia collegato a un altro profilo FantaDrama.' })
+    if (existingUser.exists) { await mergeProfiles(String(data.userId), links.docs[0].id); merged = true }
     await links.docs[0].ref.delete()
   }
   await db.collection('telegramLinks').doc(data.userId).set({ telegramUserId: String(from.id), chatId: String(chatId), username: from.username ?? null, firstName: from.first_name ?? null, linkedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, { merge: true })
   await requestRef.update({ usedAt: new Date().toISOString() })
-  await telegramApi('sendMessage', { chat_id: chatId, text: 'Telegram e collegato al tuo profilo FantaDrama.', reply_markup: { inline_keyboard: [[{ text: 'Apri FantaDrama', web_app: { url: appUrl } }]] } })
+  await telegramApi('sendMessage', { chat_id: chatId, text: merged ? 'Profili uniti e Telegram collegato. Crediti, aste, carte e storico sono ora nel tuo profilo principale.' : 'Telegram e collegato al tuo profilo FantaDrama.', reply_markup: { inline_keyboard: [[{ text: 'Apri FantaDrama', web_app: { url: appUrl } }]] } })
 }
 
 async function sendMenuHint(chatId: string | number) {
