@@ -4,7 +4,7 @@ import api from '../services/api'
 
 type Kind = 'CARD' | 'EVENT' | 'AVATAR'
 
-export default function ImageForge({ kind, imageUrl, onChange }: { kind: Kind; imageUrl?: string; onChange: (url: string) => void }) {
+export default function ImageForge({ kind, imageUrl, onChange }: { kind: Kind; imageUrl?: string; onChange: (url: string, storagePath?: string) => void }) {
   const [description, setDescription] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
   const [message, setMessage] = useState('')
@@ -15,7 +15,7 @@ export default function ImageForge({ kind, imageUrl, onChange }: { kind: Kind; i
     setIsGenerating(true); setMessage('L’IA sta creando la tua immagine…')
     try {
       const response = await api.post('/assets/generate', { kind, description })
-      onChange(response.data.imageUrl); setMessage('Immagine pronta: verrà salvata insieme al contenuto.')
+      onChange(response.data.imageUrl, response.data.storagePath); setMessage('Immagine pronta: verrà salvata insieme al contenuto.')
     } catch (error: any) {
       const code = error.response?.data?.error
       const configured = /^(openai|gemini|grok|cloudflare)_image_generation_not_configured$/.test(code ?? '')

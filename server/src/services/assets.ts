@@ -5,6 +5,7 @@ export type AssetKind = 'CARD' | 'EVENT' | 'AVATAR'
 type ImageProvider = 'openai' | 'gemini' | 'grok' | 'cloudflare'
 type AssetStorageProvider = 'firebase' | 'dropbox'
 type GeneratedImage = { buffer: Buffer; contentType: string }
+export type StoredAsset = { imageUrl: string; storagePath?: string }
 
 function imagePrompt(kind: AssetKind, description: string) {
   const style = 'Original FantaDrama social-game universe; refined glossy 3D editorial illustration; cinematic violet, indigo, cyan and hot-pink lighting; family-friendly social party mood; no text, no letters, no logos, no watermark, no celebrity, no recognizable real person, no copyrighted characters.'
@@ -23,13 +24,13 @@ function assetStorageProvider(): AssetStorageProvider {
   throw new Error('unsupported_asset_storage_provider')
 }
 
-async function saveToFirebaseStorage(userId: string, kind: AssetKind, buffer: Buffer, contentType: string) {
+async function saveToFirebaseStorage(userId: string, kind: AssetKind, buffer: Buffer, contentType: string): Promise<StoredAsset> {
   const extension = contentType === 'image/jpeg' ? 'jpg' : contentType === 'image/webp' ? 'webp' : 'png'
   const token = crypto.randomUUID()
   const path = `fantadrama/${kind.toLowerCase()}/${userId}/${crypto.randomUUID()}.${extension}`
   const file = storage.bucket().file(path)
   await file.save(buffer, { resumable: false, metadata: { contentType, metadata: { firebaseStorageDownloadTokens: token } } })
-  return `https://firebasestorage.googleapis.com/v0/b/${storage.bucket().name}/o/${encodeURIComponent(path)}?alt=media&token=${token}`
+  return { imageUrl: `https://firebasestorage.googleapis.com/v0/b/${storage.bucket().name}/o/${encodeURIComponent(path)}?alt=media&token=${token}`, storagePath: path }
 }
 
 function dropboxAssetFolder() {
@@ -69,7 +70,7 @@ async function ensureDropboxFolder(accessToken: string, path: string) {
   }
 }
 
-async function saveToDropbox(userId: string, kind: AssetKind, buffer: Buffer, contentType: string) {
+async function saveToDropbox(userId: string, kind: AssetKind, buffer: Buffer, contentType: string): Promise<StoredAsset> {
   const accessToken = process.env.DROPBOX_ACCESS_TOKEN?.trim()
   if (!accessToken) throw new Error('dropbox_storage_not_configured')
   const folder = `${dropboxAssetFolder()}/${kind.toLowerCase()}/${userId}`
@@ -92,7 +93,7 @@ async function saveToDropbox(userId: string, kind: AssetKind, buffer: Buffer, co
   })
   if (sharedLink.ok) {
     const payload = await sharedLink.json() as { url?: string }
-    if (payload.url) return directDropboxUrl(payload.url)
+    if (payload.url) return { imageUrl: directDropboxUrl(payload.url), storagePath: path }
   }
 
   // Dropbox returns an error when a public link already exists for this path.
@@ -100,7 +101,7 @@ async function saveToDropbox(userId: string, kind: AssetKind, buffer: Buffer, co
   if (existingLinks.ok) {
     const payload = await existingLinks.json() as { links?: Array<{ url?: string }> }
     const url = payload.links?.[0]?.url
-    if (url) return directDropboxUrl(url)
+    if (url) return { imageUrl: directDropboxUrl(url), storagePath: path }
   }
   throw new Error(`dropbox_shared_link_failed_${sharedLink.status}`)
 }
@@ -253,9 +254,9 @@ export async function generateSharedStarterAsset(kind: AssetKind, key: string, d
   if (typeof cached === 'string' && cached) return cached
   const provider = providerFromEnvironment(process.env.AI_IMAGE_PROVIDER)
   const generated = await generateWithProvider(provider, kind, imagePrompt(kind, description))
-  const imageUrl = await saveToStorage('catalogue', kind, generated.buffer, generated.contentType)
-  await ref.set({ kind, key, imageUrl, createdAt: new Date().toISOString() })
-  return imageUrl
+  const asset = await saveToStorage('catalogue', kind, generated.buffer, generated.contentType)
+  await ref.set({ kind, key, imageUrl: asset.imageUrl, storagePath: asset.storagePath ?? null, createdAt: new Date().toISOString() })
+  return asset.imageUrl
 }
 
 export async function uploadAvatarAsset(userId: string, dataUrl: string) {
@@ -263,5 +264,16 @@ export async function uploadAvatarAsset(userId: string, dataUrl: string) {
   if (!match) throw new Error('invalid_image_upload')
   const buffer = Buffer.from(match[2], 'base64')
   if (buffer.length > 2_500_000) throw new Error('image_too_large')
-  return saveToStorage(userId, 'AVATAR', buffer, match[1])
+  return (await saveToStorage(userId, 'AVATAR', buffer, match[1])).imageUrl
+}
+
+export async function deleteDropboxAsset(storagePath?: string) {
+  if (!storagePath || assetStorageProvider() !== 'dropbox') return { deleted: false, reason: 'no_dropbox_path' }
+  const root = dropboxAssetFolder()
+  if (!storagePath.startsWith(`${root}/`)) throw new Error('invalid_dropbox_asset_path')
+  const accessToken = process.env.DROPBOX_ACCESS_TOKEN?.trim()
+  if (!accessToken) throw new Error('dropbox_storage_not_configured')
+  const response = await dropboxRequest('files/delete_v2', accessToken, { path: storagePath })
+  if (!response.ok && response.status !== 409) throw new Error(`dropbox_delete_failed_${response.status}`)
+  return { deleted: response.ok }
 }

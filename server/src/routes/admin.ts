@@ -4,6 +4,7 @@ import { requireAuth, AuthRequest } from '../middleware/auth'
 import { db, documentData, groupRole } from '../services/firebase'
 import { closeAndScoreEvent } from '../services/scoring'
 import { grantPlatformAdmin, isPlatformAdmin, isValidAdminPassword, revokePlatformAdmin } from '../services/platform-admin'
+import { deleteDropboxAsset } from '../services/assets'
 
 const router = Router()
 const passwordSchema = z.object({ password: z.string().min(1).max(256) })
@@ -30,14 +31,24 @@ router.post('/lock', requireAuth, async (req: AuthRequest, res) => {
 })
 
 router.get('/overview', requireAuth, requirePlatformAdmin, async (_req, res) => {
-  const [groups, users, events] = await Promise.all([db.collection('groups').get(), db.collection('users').get(), db.collection('events').get()])
+  const [groups, users, events, cards] = await Promise.all([db.collection('groups').get(), db.collection('users').get(), db.collection('events').get(), db.collection('cardCatalog').get()])
   const groupNames = new Map(groups.docs.map((group) => [group.id, String(group.data().name ?? 'Gruppo senza nome')]))
   return res.json({
-    stats: { groups: groups.size, users: users.size, events: events.size },
+    stats: { groups: groups.size, users: users.size, events: events.size, cards: cards.size },
     groups: groups.docs.map((group) => documentData(group.id, { ...group.data(), memberCount: Array.isArray(group.data().memberIds) ? group.data().memberIds.length : 0 })),
     events: events.docs.map((event) => documentData(event.id, { ...event.data(), groupName: groupNames.get(String(event.data().groupId)) ?? 'Gruppo eliminato' })),
-    users: users.docs.map((user) => documentData(user.id, user.data() as Record<string, unknown>))
+    users: users.docs.map((user) => documentData(user.id, user.data() as Record<string, unknown>)),
+    cards: cards.docs.map((card) => documentData(card.id, card.data() as Record<string, unknown>))
   })
+})
+
+router.delete('/cards/:id', requireAuth, requirePlatformAdmin, async (req: AuthRequest, res) => {
+  const card = await db.collection('cardCatalog').doc(req.params.id).get()
+  if (!card.exists) return res.status(404).json({ error: 'card_not_found' })
+  const copies = await db.collection('cards').where('catalogCardId', '==', card.id).get()
+  const batch = db.batch(); copies.docs.forEach((copy) => batch.delete(copy.ref)); batch.delete(card.ref); await batch.commit()
+  const deletion = await deleteDropboxAsset(typeof card.data()?.imageStoragePath === 'string' ? card.data()?.imageStoragePath : undefined)
+  return res.json({ ok: true, removedDeckCopies: copies.size, asset: deletion })
 })
 
 router.post('/events/:id/close', requireAuth, async (req: AuthRequest, res) => {

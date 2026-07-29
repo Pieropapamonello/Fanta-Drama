@@ -11,8 +11,8 @@ const uploadSchema = z.object({ dataUrl: z.string().min(32).max(3_500_000) })
 router.post('/generate', requireAuth, async (req: AuthRequest, res) => {
   try {
     const data = generationSchema.parse(req.body)
-    const imageUrl = await generateImageAsset(req.userId!, data.kind, data.description)
-    return res.status(201).json({ imageUrl })
+    const asset = await generateImageAsset(req.userId!, data.kind, data.description)
+    return res.status(201).json(asset)
   } catch (error: any) {
     const message = error.message ?? 'image_generation_failed'
     console.error('Image generation failed', { kind: req.body?.kind, userId: req.userId, code: message })

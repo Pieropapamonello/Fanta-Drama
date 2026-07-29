@@ -1,7 +1,7 @@
 import React, { FormEvent, useCallback, useEffect, useState } from 'react'
 import api from '../services/api'
 
-type Overview = { stats: { users: number, groups: number, events: number }, groups: any[], events: any[], users: any[] }
+type Overview = { stats: { users: number, groups: number, events: number, cards: number }, groups: any[], events: any[], users: any[], cards: any[] }
 
 export default function AdminConsole() {
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null)
@@ -44,6 +44,14 @@ export default function AdminConsole() {
     finally { setWorking(null) }
   }
 
+  const deleteCard = async (card: any) => {
+    if (!window.confirm(`Eliminare “${card.title}” dal catalogo e da tutti i mazzi? Se è una nuova immagine, sarà rimossa anche da Dropbox.`)) return
+    setWorking(`card-${card.id}`); setNotice('')
+    try { const result = await api.delete(`/admin/cards/${card.id}`); await load(); setNotice(result.data.asset?.deleted ? 'Carta e immagine Dropbox eliminate.' : 'Carta eliminata da catalogo e mazzi. Il file storico Dropbox non aveva un percorso registrato.') }
+    catch (error: any) { setNotice(error.response?.data?.error || 'Non riesco a eliminare la carta.') }
+    finally { setWorking(null) }
+  }
+
   const lock = async () => {
     await api.post('/admin/lock')
     setOverview(null); setIsAdmin(false); setNotice('Console bloccata su questo account.')
@@ -55,11 +63,12 @@ export default function AdminConsole() {
   return <section className="admin-console">
     <div className="page-heading"><div><p className="eyebrow">Controllo totale</p><h2>Console admin</h2><p className="page-lead">Tutti i dati FantaDrama in un unico punto.</p></div><button className="btn btn-ghost" type="button" onClick={lock}>Blocca console</button></div>
     {overview && <>
-      <div className="admin-stats"><article><strong>{overview.stats.users}</strong><span>Utenti</span></article><article><strong>{overview.stats.groups}</strong><span>Gruppi</span></article><article><strong>{overview.stats.events}</strong><span>Eventi</span></article></div>
+      <div className="admin-stats"><article><strong>{overview.stats.users}</strong><span>Utenti</span></article><article><strong>{overview.stats.groups}</strong><span>Gruppi</span></article><article><strong>{overview.stats.events}</strong><span>Eventi</span></article><article><strong>{overview.stats.cards}</strong><span>Carte community</span></article></div>
       <div className="admin-grid">
         <section className="admin-panel"><h3>Tutti i gruppi</h3>{overview.groups.length ? overview.groups.map((group) => <article className="admin-row" key={group.id}><div><strong>{group.name}</strong><p>{group.memberCount} membri · Codice: {group.code}</p></div><button type="button" className="admin-danger" onClick={() => deleteGroup(group)} disabled={working === `group-${group.id}`}>{working === `group-${group.id}` ? 'Elimino...' : 'Elimina'}</button></article>) : <p className="muted">Nessun gruppo.</p>}</section>
         <section className="admin-panel"><h3>Eventi</h3>{overview.events.length ? overview.events.map((event) => <article className="admin-row" key={event.id}><div><strong>{event.title}</strong><p>{event.groupName} · {event.state}</p></div>{event.state !== 'PRONOSTICI_CHIUSI' && <button type="button" className="btn btn-ghost" onClick={() => closeEvent(event.id)} disabled={working === `event-${event.id}`}>{working === `event-${event.id}` ? 'Chiudo...' : 'Chiudi'}</button>}</article>) : <p className="muted">Nessun evento.</p>}</section>
       </div>
+      <section className="admin-panel admin-cards"><h3>Carte create dalla community</h3>{overview.cards.length ? overview.cards.map((card) => <article className="admin-row" key={card.id}>{card.imageUrl && <img className="admin-card-preview" src={card.imageUrl} alt="" />}<div><strong>{card.title}</strong><p>{card.creatorName || 'Giocatore'} · {new Date(card.createdAt).toLocaleString('it-IT')}</p></div><button type="button" className="admin-danger" onClick={() => deleteCard(card)} disabled={working === `card-${card.id}`}>{working === `card-${card.id}` ? 'Elimino...' : 'Elimina carta'}</button></article>) : <p className="muted">Nessuna carta creata dalla community.</p>}</section>
       <section className="admin-panel admin-users"><h3>Utenti registrati</h3><div className="admin-user-list">{overview.users.map((user) => <span key={user.id}>{user.avatar ? <img src={user.avatar} alt="" /> : <i>{String(user.username || '?').slice(0, 1).toUpperCase()}</i>}{user.username || 'Senza nome'}</span>)}</div></section>
     </>}
     {notice && <p className="admin-notice">{notice}</p>}
