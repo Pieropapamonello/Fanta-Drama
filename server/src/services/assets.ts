@@ -198,10 +198,11 @@ async function generateWithCloudflare(kind: AssetKind, prompt: string): Promise<
   if (!accountId || !apiToken) throw new Error('cloudflare_image_generation_not_configured')
   const model = process.env.CLOUDFLARE_IMAGE_MODEL ?? '@cf/stabilityai/stable-diffusion-xl-base-1.0'
   const eventImage = kind === 'EVENT'
+  const flux = model.includes('flux-')
   const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/run/${model}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiToken}`, 'content-type': 'application/json' },
-    body: JSON.stringify({
+    body: JSON.stringify(flux ? { prompt, steps: 4, seed: Math.floor(Math.random() * 2_147_483_647) } : {
       prompt,
       negative_prompt: 'text, letters, logo, watermark, celebrity, recognizable real person, copyrighted character, blurry, low quality',
       width: eventImage ? 1024 : 768,
@@ -215,8 +216,9 @@ async function generateWithCloudflare(kind: AssetKind, prompt: string): Promise<
   const payload = Buffer.from(await response.arrayBuffer())
   if (contentType.startsWith('image/')) return { buffer: payload, contentType }
   try {
-    const body = JSON.parse(payload.toString('utf8')) as { result?: string; success?: boolean }
-    if (body.result) return { buffer: Buffer.from(body.result.replace(/^data:image\/\w+;base64,/, ''), 'base64'), contentType: 'image/png' }
+    const body = JSON.parse(payload.toString('utf8')) as { result?: string | { image?: string }; success?: boolean }
+    const encoded = typeof body.result === 'string' ? body.result : body.result?.image
+    if (encoded) return { buffer: Buffer.from(encoded.replace(/^data:image\/\w+;base64,/, ''), 'base64'), contentType: flux ? 'image/jpeg' : 'image/png' }
   } catch { /* The binary response path above handles the normal image result. */ }
   throw new Error('image_generation_empty_response')
 }
