@@ -21,7 +21,7 @@ function menuKeyboard(isAdmin = false) {
   const keyboard: Array<Array<Record<string, unknown>>> = [
     [{ text: 'Apri FantaDrama', web_app: { url: appUrl } }],
     [{ text: 'Il mio profilo', callback_data: 'profile' }, { text: 'I miei gruppi', callback_data: 'groups' }],
-    [{ text: 'Eventi attivi', callback_data: 'events' }, { text: 'I miei punti', callback_data: 'scores' }],
+    [{ text: 'Eventi e aste', callback_data: 'events' }, { text: 'Crediti e offerte', callback_data: 'credits' }],
     [{ text: 'Classifica crew', callback_data: 'leaderboard' }]
   ]
   if (isAdmin) keyboard.push([{ text: 'Console admin', callback_data: 'admin' }])
@@ -69,7 +69,7 @@ async function completeTelegramLink(chatId: string | number, from: TelegramUser,
   }
   await db.collection('telegramLinks').doc(data.userId).set({ telegramUserId: String(from.id), chatId: String(chatId), username: from.username ?? null, firstName: from.first_name ?? null, linkedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, { merge: true })
   await requestRef.update({ usedAt: new Date().toISOString() })
-  await telegramApi('sendMessage', { chat_id: chatId, text: merged ? 'Profili uniti e Telegram collegato. Crediti, aste, carte e storico sono ora nel tuo profilo principale.' : 'Telegram e collegato al tuo profilo FantaDrama.', reply_markup: { inline_keyboard: [[{ text: 'Apri FantaDrama', web_app: { url: appUrl } }]] } })
+  await telegramApi('sendMessage', { chat_id: chatId, text: merged ? 'Profili uniti e Telegram collegato. Crediti, aste, carte e storico sono ora nel tuo profilo principale.\n\nEcco il menu per gestire FantaDrama.' : 'Telegram è collegato al tuo profilo FantaDrama.\n\nEcco il menu per gestire FantaDrama.', reply_markup: { inline_keyboard: menuKeyboard(await isTelegramAdmin(from.id)) } })
 }
 
 async function sendMenuHint(chatId: string | number) {
@@ -119,10 +119,11 @@ async function handleAction(chatId: string | number, from: TelegramUser, action:
     const text = events.length ? `Eventi attivi\n\n${events.map((event) => `- ${event.data().title}\n  ${event.data().state} - ${new Date(event.data().startsAt).toLocaleString('it-IT')}`).join('\n')}` : 'Nessun evento attivo nella tua crew in questo momento.'
     return telegramApi('sendMessage', { chat_id: chatId, text, reply_markup: { inline_keyboard: [[{ text: 'Apri eventi', web_app: { url: `${appUrl.replace('/telegram-miniapp', '')}/events` } }], [{ text: 'Menu', callback_data: 'menu' }]] } })
   }
-  if (action === 'scores') {
-    const scores = await db.collection('scores').where('userId', '==', user.id).get()
-    const total = scores.docs.reduce((value, score) => value + Number(score.data().points ?? 0), 0)
-    return telegramApi('sendMessage', { chat_id: chatId, text: `I tuoi punti\n\nTotale: ${total} punti\nEventi valutati: ${scores.size}`, reply_markup: { inline_keyboard: [[{ text: 'Apri FantaDrama', web_app: { url: appUrl } }], [{ text: 'Menu', callback_data: 'menu' }]] } })
+  if (action === 'credits' || action === 'scores') {
+    const wallet = await db.collection('wallets').doc(user.id).get(); const balance = Number(wallet.data()?.balance ?? 1000); const reserved = Number(wallet.data()?.reserved ?? 0)
+    const leading = await db.collection('auctions').where('leaderId', '==', user.id).get()
+    const active = leading.docs.filter((auction) => auction.data().status === 'OPEN').length
+    return telegramApi('sendMessage', { chat_id: chatId, text: `I tuoi crediti\n\nDisponibili: ${Math.max(0, balance - reserved)}\nIn offerte: ${reserved}\nAste in testa: ${active}`, reply_markup: { inline_keyboard: [[{ text: 'Apri le mie aste', web_app: { url: `${appUrl.replace('/telegram-miniapp', '')}/events` } }], [{ text: 'Menu', callback_data: 'menu' }]] } })
   }
   if (action === 'leaderboard') {
     const groups = await db.collection('groups').where('memberIds', 'array-contains', user.id).get()
@@ -167,7 +168,7 @@ router.post('/webhook', async (req, res) => {
       else if (command === '/profilo') await handleAction(message.chat.id, message.from, 'profile')
       else if (command === '/gruppi') await handleAction(message.chat.id, message.from, 'groups')
       else if (command === '/eventi') await handleAction(message.chat.id, message.from, 'events')
-      else if (command === '/punti') await handleAction(message.chat.id, message.from, 'scores')
+      else if (command === '/punti' || command === '/crediti') await handleAction(message.chat.id, message.from, 'credits')
       else if (command === '/classifica') await handleAction(message.chat.id, message.from, 'leaderboard')
     }
   } catch (error) { console.error('Telegram webhook processing failed', error) }
