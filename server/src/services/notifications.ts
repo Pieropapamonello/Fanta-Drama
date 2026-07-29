@@ -3,6 +3,14 @@ import { db, firebaseApp } from './firebase'
 
 const appUrl = 'https://fanta-drama.onrender.com'
 
+function channelsFromLegacy(preference: string) {
+  if (preference === 'IN_APP') return []
+  if (preference === 'TELEGRAM') return ['TELEGRAM']
+  if (preference === 'EMAIL') return ['EMAIL']
+  if (preference === 'BOTH') return ['TELEGRAM', 'EMAIL']
+  return ['DEVICE', 'TELEGRAM', 'EMAIL']
+}
+
 export type NotificationPayload = {
   title: string
   message: string
@@ -81,16 +89,17 @@ export async function notifyUser(userId: string, payload: NotificationPayload) {
   const user = userSnapshot.exists ? userSnapshot.data()! : {}
   const link = linkSnapshot.exists ? linkSnapshot.data()! : {}
   const preference = ['IN_APP', 'TELEGRAM', 'EMAIL', 'BOTH', 'ALL'].includes(String(user.notificationPreference)) ? String(user.notificationPreference) : 'ALL'
+  const channels = Array.isArray(user.notificationChannels) ? user.notificationChannels.filter((channel): channel is string => ['DEVICE', 'TELEGRAM', 'EMAIL'].includes(String(channel))) : channelsFromLegacy(preference)
   const results: Array<{ channel: string, status: string }> = [{ channel: 'in_app', status: 'stored' }]
-  if (preference === 'IN_APP' || preference === 'ALL') results.push(await sendDevicePush(userId, payload))
-  if ((preference === 'TELEGRAM' || preference === 'BOTH' || preference === 'ALL') && link.chatId) {
+  if (channels.includes('DEVICE')) results.push(await sendDevicePush(userId, payload))
+  if (channels.includes('TELEGRAM') && link.chatId) {
     try {
       await sendTelegramMessage(String(link.chatId), `✨ ${payload.title}\n\n${payload.message}`, payload.path ?? '/dashboard')
       results.push({ channel: 'telegram', status: 'sent' })
     } catch { results.push({ channel: 'telegram', status: 'failed' }) }
   }
-  if ((preference === 'EMAIL' || preference === 'BOTH' || preference === 'ALL') && user.email) results.push(await sendEmail(String(user.email), payload))
-  await db.collection('notifications').add({ userId, ...payload, preference, deliveries: results, createdAt: new Date().toISOString() })
+  if (channels.includes('EMAIL') && user.email) results.push(await sendEmail(String(user.email), payload))
+  await db.collection('notifications').add({ userId, ...payload, preference, channels, deliveries: results, createdAt: new Date().toISOString() })
   return results
 }
 

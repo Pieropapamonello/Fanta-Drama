@@ -12,9 +12,18 @@ const profileSchema = z.object({
   username: z.string().trim().min(3).max(30), avatar: z.union([z.enum(avatars), z.string().url().max(2048)]), bio: z.string().trim().max(160).optional(), city: z.string().trim().max(48).optional(),
   crewRole: z.enum(['Stratega', 'Creatore di caos', 'Osservatore', 'Regista del drama', 'Jolly']).optional(), motto: z.string().trim().max(90).optional(),
   notificationPreference: z.enum(['IN_APP', 'TELEGRAM', 'EMAIL', 'BOTH', 'ALL']).optional(),
+  notificationChannels: z.array(z.enum(['DEVICE', 'TELEGRAM', 'EMAIL'])).optional(),
 })
 const pushSubscriptionSchema = z.object({ token: z.string().min(40).max(4096), platform: z.string().max(40).optional() })
 const pushDiagnosticSchema = z.object({ code: z.string().max(120).optional(), message: z.string().max(500).optional() })
+
+function channelsFromLegacy(preference: string) {
+  if (preference === 'IN_APP') return []
+  if (preference === 'TELEGRAM') return ['TELEGRAM']
+  if (preference === 'EMAIL') return ['EMAIL']
+  if (preference === 'BOTH') return ['TELEGRAM', 'EMAIL']
+  return ['DEVICE', 'TELEGRAM', 'EMAIL']
+}
 
 async function profileWithConnections(userId: string) {
   const [snapshot, authUser, link] = await Promise.all([db.collection('users').doc(userId).get(), firebaseAuth.getUser(userId), db.collection('telegramLinks').doc(userId).get()])
@@ -97,7 +106,7 @@ router.put('/me', requireAuth, async (req: AuthRequest, res) => {
     const current = await ref.get()
     if (!current.exists) return res.status(404).json({ error: 'not_found' })
     const authUser = await firebaseAuth.getUser(req.userId!)
-    const profile = { ...current.data(), username: data.username, avatar: data.avatar, email: authUser.email ?? '', bio: data.bio ?? '', city: data.city ?? '', crewRole: data.crewRole ?? 'Jolly', motto: data.motto ?? '', notificationPreference: data.notificationPreference ?? 'ALL', profileCompleted: true, updatedAt: new Date().toISOString() }
+    const profile = { ...current.data(), username: data.username, avatar: data.avatar, email: authUser.email ?? '', bio: data.bio ?? '', city: data.city ?? '', crewRole: data.crewRole ?? 'Jolly', motto: data.motto ?? '', notificationPreference: data.notificationPreference ?? String(current.data()?.notificationPreference ?? 'ALL'), notificationChannels: data.notificationChannels ?? channelsFromLegacy(String(current.data()?.notificationPreference ?? 'ALL')), profileCompleted: true, updatedAt: new Date().toISOString() }
     await ref.set(profile)
     return res.json({ user: await profileWithConnections(req.userId!) })
   } catch (error: any) { return res.status(400).json({ error: error.message ?? 'invalid_profile' }) }
