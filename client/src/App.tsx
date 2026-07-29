@@ -24,6 +24,7 @@ import ProfileSetup from './pages/ProfileSetup'
 import AdminConsole from './pages/AdminConsole'
 import AdminLogin from './pages/AdminLogin'
 import Notifications from './pages/Notifications'
+import PwaInstallPrompt from './components/PwaInstallPrompt'
 
 function Header() {
   const navigate = useNavigate()
@@ -48,7 +49,7 @@ function MobileNav() {
 }
 
 export default function App() {
-  return <div className="app-shell">
+  return <div className="app-shell"><PwaInstallPrompt />
     <Header />
     <main className="app-main"><Routes>
       <Route path="/" element={<Landing />} />

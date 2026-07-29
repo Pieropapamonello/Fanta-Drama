@@ -1,0 +1,14 @@
+{
+  "id": "/",
+  "name": "FantaDrama",
+  "short_name": "FantaDrama",
+  "description": "Il gioco di pronostici e aste per vivere il caos con la tua crew.",
+  "lang": "it",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0b0a1b",
+  "theme_color": "#111027",
+  "orientation": "portrait-primary",
+  "icons": [{ "src": "/icons/fantadrama-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
