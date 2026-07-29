@@ -20,7 +20,8 @@ function menuKeyboard(isAdmin = false) {
   const keyboard: Array<Array<Record<string, unknown>>> = [
     [{ text: 'Apri FantaDrama', web_app: { url: appUrl } }],
     [{ text: 'Il mio profilo', callback_data: 'profile' }, { text: 'I miei gruppi', callback_data: 'groups' }],
-    [{ text: 'Eventi attivi', callback_data: 'events' }, { text: 'I miei punti', callback_data: 'scores' }]
+    [{ text: 'Eventi attivi', callback_data: 'events' }, { text: 'I miei punti', callback_data: 'scores' }],
+    [{ text: 'Classifica crew', callback_data: 'leaderboard' }]
   ]
   if (isAdmin) keyboard.push([{ text: 'Console admin', callback_data: 'admin' }])
   keyboard.push([{ text: 'Aggiorna menu', callback_data: 'menu' }])
@@ -121,6 +122,16 @@ async function handleAction(chatId: string | number, from: TelegramUser, action:
     const total = scores.docs.reduce((value, score) => value + Number(score.data().points ?? 0), 0)
     return telegramApi('sendMessage', { chat_id: chatId, text: `I tuoi punti\n\nTotale: ${total} punti\nEventi valutati: ${scores.size}`, reply_markup: { inline_keyboard: [[{ text: 'Apri FantaDrama', web_app: { url: appUrl } }], [{ text: 'Menu', callback_data: 'menu' }]] } })
   }
+  if (action === 'leaderboard') {
+    const groups = await db.collection('groups').where('memberIds', 'array-contains', user.id).get()
+    const memberIds = [...new Set(groups.docs.flatMap((group) => (group.data().memberIds as string[] | undefined) ?? []))]
+    const allScores = await db.collection('scores').get()
+    const totals = new Map<string, number>()
+    allScores.docs.filter((score) => memberIds.includes(String(score.data().userId))).forEach((score) => totals.set(String(score.data().userId), (totals.get(String(score.data().userId)) ?? 0) + Number(score.data().points ?? 0)))
+    const players = await Promise.all(memberIds.map(async (id) => { const profile = await db.collection('users').doc(id).get(); return { name: profile.data()?.username ?? 'Giocatore', points: totals.get(id) ?? 0 } }))
+    const lines = players.sort((a, b) => b.points - a.points || a.name.localeCompare(b.name, 'it')).slice(0, 10).map((player, index) => `${index + 1}. ${player.name} — ${player.points} pt`)
+    return telegramApi('sendMessage', { chat_id: chatId, text: lines.length ? `Classifica della crew\n\n${lines.join('\n')}` : 'Entra in un gruppo per vedere la classifica.', reply_markup: { inline_keyboard: [[{ text: 'Apri classifica', web_app: { url: `${appUrl.replace('/telegram-miniapp', '')}/events` } }], [{ text: 'Menu', callback_data: 'menu' }]] } })
+  }
 }
 
 router.post('/webhook', async (req, res) => {
@@ -155,6 +166,7 @@ router.post('/webhook', async (req, res) => {
       else if (command === '/gruppi') await handleAction(message.chat.id, message.from, 'groups')
       else if (command === '/eventi') await handleAction(message.chat.id, message.from, 'events')
       else if (command === '/punti') await handleAction(message.chat.id, message.from, 'scores')
+      else if (command === '/classifica') await handleAction(message.chat.id, message.from, 'leaderboard')
     }
   } catch (error) { console.error('Telegram webhook processing failed', error) }
   return res.sendStatus(200)
