@@ -12,6 +12,7 @@ const schema = z.object({
   type: z.enum(['YES_NO', 'PICK_CHARACTER', 'MULTI_CHOICE', 'NUMBER', 'RANGE', 'TIME', 'TEXT', 'FIRST_ACTION', 'ORDER']).optional(),
   imageUrl: z.string().url().max(2048), imageStoragePath: z.string().max(1024).optional()
 })
+const interestSchema = z.object({ interested: z.boolean() })
 
 function normalized(value: string) {
   return value.toLocaleLowerCase('it-IT').replace(/\s+/g, ' ').trim()
@@ -83,6 +84,19 @@ router.post('/library/custom/:id', requireAuth, async (req: AuthRequest, res) =>
   if (!snapshot.exists) return res.status(404).json({ error: 'catalog_card_not_found' })
   const result = await addCatalogCardToDeck(req.userId!, snapshot.id, snapshot.data() as Record<string, unknown>)
   return res.status(result.alreadyAdded ? 200 : 201).json(result)
+})
+
+router.get('/interests', requireAuth, async (req: AuthRequest, res) => {
+  const snapshot = await db.collection('cardInterests').where('userId', '==', req.userId!).get()
+  return res.json({ keys: snapshot.docs.map((item) => String(item.data().cardKey)) })
+})
+
+router.put('/interests/:key', requireAuth, async (req: AuthRequest, res) => {
+  const { interested } = interestSchema.parse(req.body); const cardKey = req.params.key
+  if (!/^(starter|custom):[a-zA-Z0-9_-]+$/.test(cardKey)) return res.status(400).json({ error: 'invalid_card_key' })
+  const id = Buffer.from(`${req.userId!}\u0000${cardKey}`).toString('base64url'); const ref = db.collection('cardInterests').doc(id)
+  if (interested) await ref.set({ userId: req.userId!, cardKey, updatedAt: new Date().toISOString() }); else await ref.delete()
+  return res.json({ cardKey, interested })
 })
 
 router.get('/', requireAuth, async (req: AuthRequest, res) => {
