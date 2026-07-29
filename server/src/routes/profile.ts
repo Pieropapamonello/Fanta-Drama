@@ -25,6 +25,31 @@ router.get('/me', requireAuth, async (req: AuthRequest, res) => {
   return res.json({ user })
 })
 
+router.get('/overview', requireAuth, async (req: AuthRequest, res) => {
+  const userId = req.userId!
+  const [groups, cards, scores, notifications] = await Promise.all([
+    db.collection('groups').where('memberIds', 'array-contains', userId).get(),
+    db.collection('cards').where('authorId', '==', userId).get(),
+    db.collection('scores').where('userId', '==', userId).get(),
+    db.collection('notifications').where('userId', '==', userId).get()
+  ])
+  const groupIds = new Set(groups.docs.map((group) => group.id))
+  const allEvents = await db.collection('events').get()
+  const nextEvents = allEvents.docs
+    .filter((event) => groupIds.has(String(event.data().groupId)) && event.data().state !== 'PRONOSTICI_CHIUSI' && new Date(event.data().endsAt).getTime() > Date.now())
+    .sort((left, right) => String(left.data().startsAt).localeCompare(String(right.data().startsAt)))
+    .slice(0, 3)
+    .map((event) => documentData(event.id, event.data() as Record<string, unknown>))
+  const recentNotifications = notifications.docs
+    .map((notification) => documentData(notification.id, notification.data() as Record<string, unknown>))
+    .sort((left, right) => String(right.createdAt ?? '').localeCompare(String(left.createdAt ?? '')))
+    .slice(0, 4)
+  return res.json({
+    stats: { groups: groups.size, cards: cards.size, points: scores.docs.reduce((total, score) => total + Number(score.data().points ?? 0), 0) },
+    nextEvents, recentNotifications
+  })
+})
+
 router.put('/me', requireAuth, async (req: AuthRequest, res) => {
   try {
     const data = profileSchema.parse(req.body)
