@@ -7,8 +7,8 @@ type AssetStorageProvider = 'firebase' | 'dropbox'
 type GeneratedImage = { buffer: Buffer; contentType: string }
 
 function imagePrompt(kind: AssetKind, description: string) {
-  const style = 'Original FantaDrama social-game universe; refined glossy 3D editorial illustration; cinematic violet, indigo, cyan and hot-pink lighting; no text, no letters, no logos, no watermark, no celebrity, no recognizable real person, no copyrighted characters.'
-  if (kind === 'CARD') return `Collectible game card artwork, vertical action composition. Subject: ${description}. ${style}`
+  const style = 'Original FantaDrama social-game universe; refined glossy 3D editorial illustration; cinematic violet, indigo, cyan and hot-pink lighting; family-friendly social party mood; no text, no letters, no logos, no watermark, no celebrity, no recognizable real person, no copyrighted characters.'
+  if (kind === 'CARD') return `Collectible game card artwork, vertical composition. Represent this request literally as a clear object or a cheerful party-table scene: ${description}. Keep the subject central and immediately understandable. Do not invent monsters, reptiles, animals, skeletons, horror, violence, masks, or strange characters. Prefer elegant objects, decorations, food, table settings, lights, confetti, cards, or an empty place setting when appropriate. No people unless the description explicitly asks for them. No readable writing anywhere. ${style}`
   if (kind === 'EVENT') return `Premium social event key art, cinematic landscape composition with clear central subject. Subject: ${description}. ${style}`
   return `Square character avatar, head-and-shoulders of an original fictional adult. Description: ${description}. Friendly expressive face, centered for circular crop. ${style}`
 }
