@@ -10,11 +10,17 @@ if (config.apiKey && config.projectId && config.messagingSenderId && config.appI
   firebase.initializeApp(config)
   firebase.messaging().onBackgroundMessage((payload) => {
     const title = payload.notification?.title || 'FantaDrama'
-    const options = { body: payload.notification?.body || 'Hai un nuovo aggiornamento.', icon: '/icons/fantadrama-icon.svg', data: { path: payload.data?.path || '/dashboard' } }
+    const path = payload.data?.path || '/dashboard'
+    const options = { body: payload.notification?.body || 'Hai un nuovo aggiornamento.', icon: '/icons/fantadrama-icon.svg', data: { url: payload.data?.url || new URL(path, self.location.origin).href } }
     self.registration.showNotification(title, options)
   })
 }
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
-  event.waitUntil(clients.openWindow(event.notification.data?.path || '/dashboard'))
+  const url = event.notification.data?.url || new URL('/dashboard', self.location.origin).href
+  event.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
+    const existing = windows.find((client) => client.url.startsWith(self.location.origin))
+    if (existing) return existing.navigate(url).then(() => existing.focus())
+    return clients.openWindow(url)
+  }))
 })

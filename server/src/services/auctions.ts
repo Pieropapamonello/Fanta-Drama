@@ -7,6 +7,7 @@ const OPENING_BID = 20
 const MIN_INCREMENT = 5
 
 function profileName(value: unknown) { return String(value || 'Un giocatore') }
+function deadlineLabel(value: unknown) { return new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(String(value))) }
 
 export async function ensureWallet(userId: string) {
   const ref = db.collection('wallets').doc(userId)
@@ -73,7 +74,7 @@ export async function placeBid(auctionId: string, userId: string, amount: number
   })
   const marketPath = result.auction.marketScope === 'GROUP' ? `/groups/${result.auction.groupId}/cards` : `/events/${result.auction.eventId}`
   const marketLabel = result.auction.marketScope === 'GROUP' ? 'Apri il mercato della crew' : 'Apri l’evento'
-  void notifyGroupMembers(String(result.auction.groupId), { kind: 'AUCTION_OUTBID', title: `Nuova offerta · ${result.auction.title}`, message: `${profileName(result.auction.leaderName)} ha puntato ${amount} crediti. ${marketLabel} per rilanciare prima della chiusura.`, path: marketPath }, [userId])
+  void notifyGroupMembers(String(result.auction.groupId), { kind: 'AUCTION_OUTBID', title: `Nuova offerta · ${result.auction.title}`, message: `${profileName(result.auction.leaderName)} ha puntato ${amount} crediti. Asta in scadenza il ${deadlineLabel(result.auction.closesAt)}. ${marketLabel} per rilanciare.`, path: marketPath, actionLabel: 'Rilancia ora' }, [userId])
   return result.auction
 }
 

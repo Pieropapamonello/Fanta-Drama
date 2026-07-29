@@ -15,10 +15,11 @@ export type NotificationPayload = {
   title: string
   message: string
   path?: string
+  actionLabel?: string
   kind: 'EVENT_CREATED' | 'EVENT_CLOSED' | 'SCORE_UPDATED' | 'AUCTION_OPENED' | 'AUCTION_OUTBID' | 'AUCTION_WON' | 'AUCTION_REMINDER' | 'CLAIM_NEEDS_VOTES' | 'CLAIM_CONFIRMED' | 'CLAIM_DENIED' | 'APPEAL_OPENED' | 'APPEAL_DECIDED'
 }
 
-export async function sendTelegramMessage(chatId: string | number, text: string, path = '/telegram-miniapp', extraButtons?: Array<Array<Record<string, string>>>) {
+export async function sendTelegramMessage(chatId: string | number, text: string, path = '/telegram-miniapp', extraButtons?: Array<Array<Record<string, string>>>, actionLabel = 'Apri FantaDrama') {
   const token = process.env.TELEGRAM_BOT_TOKEN
   if (!token) throw new Error('TELEGRAM_BOT_TOKEN is not configured')
   const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
@@ -28,7 +29,7 @@ export async function sendTelegramMessage(chatId: string | number, text: string,
       chat_id: chatId,
       text,
       reply_markup: {
-        inline_keyboard: [...(extraButtons ?? []), [{ text: 'Apri FantaDrama', web_app: { url: `${appUrl}${path}` } }]]
+        inline_keyboard: [...(extraButtons ?? []), [{ text: actionLabel, web_app: { url: `${appUrl}${path}` } }]]
       }
     })
   })
@@ -59,7 +60,7 @@ async function sendDevicePush(userId: string, payload: NotificationPayload) {
     const token = String(subscription.data().token ?? '')
     if (!token) return 'failed'
     try {
-      await getMessaging(firebaseApp).send({ token, notification: { title: payload.title, body: payload.message }, data: { path: payload.path ?? '/dashboard' }, webpush: { fcmOptions: { link: `${appUrl}${payload.path ?? '/dashboard'}` } } })
+      await getMessaging(firebaseApp).send({ token, notification: { title: payload.title, body: payload.message }, data: { path: payload.path ?? '/dashboard', url: `${appUrl}${payload.path ?? '/dashboard'}` }, webpush: { fcmOptions: { link: `${appUrl}${payload.path ?? '/dashboard'}` } } })
       return 'sent'
     } catch (error: any) {
       if (String(error?.code ?? '').includes('registration-token-not-registered')) await subscription.ref.delete()
@@ -94,7 +95,7 @@ export async function notifyUser(userId: string, payload: NotificationPayload) {
   if (channels.includes('DEVICE')) results.push(await sendDevicePush(userId, payload))
   if (channels.includes('TELEGRAM') && link.chatId) {
     try {
-      await sendTelegramMessage(String(link.chatId), `✨ ${payload.title}\n\n${payload.message}`, payload.path ?? '/dashboard')
+      await sendTelegramMessage(String(link.chatId), `✨ ${payload.title}\n\n${payload.message}`, payload.path ?? '/dashboard', undefined, payload.actionLabel ?? 'Apri FantaDrama')
       results.push({ channel: 'telegram', status: 'sent' })
     } catch { results.push({ channel: 'telegram', status: 'failed' }) }
   }

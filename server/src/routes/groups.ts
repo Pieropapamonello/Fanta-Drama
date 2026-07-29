@@ -158,7 +158,8 @@ router.post('/:id/market-auctions', requireAuth, async (req: AuthRequest, res) =
     const now = new Date(); const closesAt = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString()
     const auction = { groupId: group.id, eventId: null, marketScope: 'GROUP', cardKey, title: card.title, description: card.description, rarity: card.rarity ?? 'COMMON', type: card.type ?? 'YES_NO', imageUrl: card.imageUrl, creatorName: card.creatorName ?? null, openingBid: 20, minIncrement: 5, currentBid: 0, leaderId: null, leaderName: null, status: 'OPEN', opensAt: now.toISOString(), closesAt, requestedById: req.userId!, requestedByName: creator.data()?.username ?? 'Giocatore', createdAt: now.toISOString(), updatedAt: now.toISOString() }
     await ref.set(auction)
-    void notifyGroupMembers(group.id, { kind: 'AUCTION_OPENED', title: `Nuova asta · ${auction.title}`, message: `${auction.requestedByName} ha richiesto questa carta. L’asta è aperta: fai un’offerta o rilancia entro 24 ore.`, path: `/groups/${group.id}/cards` }, [req.userId!])
+    const deadline = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(closesAt))
+    void notifyGroupMembers(group.id, { kind: 'AUCTION_OPENED', title: `Nuova asta · ${auction.title}`, message: `${auction.requestedByName} ha richiesto questa carta. L’asta è aperta e scade il ${deadline}: fai un’offerta o rilancia.`, path: `/groups/${group.id}/cards`, actionLabel: 'Apri asta e rilancia' }, [req.userId!])
     return res.status(201).json({ auction: documentData(ref.id, auction), alreadyStarted: false })
   } catch (error: any) { return res.status(400).json({ error: error.message ?? 'market_auction_failed' }) }
 })
