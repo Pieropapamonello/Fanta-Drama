@@ -50,7 +50,7 @@ function Header() {
   }
   const exitLabel = telegramApp?.initData ? 'Chiudi' : loggedIn ? 'Esci' : 'Chiudi'
   return <header className="app-header"><div className="app-header-inner">
-    <Link to="/" className="brand" onDoubleClick={(event) => { event.preventDefault(); navigate('/admin') }}><BrandMark />FantaDrama</Link><button type="button" className="mobile-exit" onClick={exitApp} aria-label={exitLabel}>{telegramApp?.initData ? <X size={16} /> : <LogOut size={15} />}{exitLabel}</button>
+    <Link to="/" className="brand" onDoubleClick={(event) => { event.preventDefault(); navigate('/admin') }}><BrandMark />FantaDrama</Link><button type="button" className="mobile-exit" onClick={exitApp} aria-label={exitLabel}>{telegramApp?.initData ? <X size={16} /> : <LogOut size={15} />}{exitLabel}</button><PwaInstallPrompt />
     <nav className="nav-links">{loggedIn ? <>
       <Link to="/dashboard">Dashboard</Link><Link to="/groups">Gruppi</Link><Link to="/events">Eventi</Link><Link to="/cards">Carte</Link><Link to="/notifications">Notifiche</Link><Link to="/profile/setup">Profilo</Link><button type="button" onClick={logout}>Esci</button>
     </> : <><Link to="/login">Accedi</Link><Link to="/register">Registrati</Link></>}</nav>
@@ -70,7 +70,7 @@ export default function App() {
     void listenToForegroundPush().then((stop) => { unsubscribe = stop })
     return () => unsubscribe?.()
   }, [])
-  return <div className="app-shell"><PwaInstallPrompt />
+  return <div className="app-shell">
     <Header />
     <main className="app-main"><Routes>
       <Route path="/" element={<Landing />} />
