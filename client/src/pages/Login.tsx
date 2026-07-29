@@ -6,6 +6,7 @@ import api, { setAuthToken } from '../services/api'
 import { firebaseAuth } from '../services/firebase'
 import { signInWithCustomToken, signInWithEmailAndPassword } from 'firebase/auth'
 import TelegramLoginButton from '../components/TelegramLoginButton'
+import { LoginPasskeyButton } from '../components/PasskeyButton'
 
 declare global {
   interface Window {
@@ -78,7 +79,7 @@ export default function Login() {
       <input {...register('email')} className="input" />
       <label className="block mt-4 mb-2">Password</label>
       <input type="password" {...register('password')} className="input" />
-      <button className="btn mt-4">Accedi</button>
+      <button className="btn mt-4">Accedi</button><LoginPasskeyButton onSuccess={() => navigate('/dashboard', { replace: true })} />
       {telegramMessage && <p className="mt-4 text-sm text-slate-700" role="status">{telegramMessage}</p>}
       <div className="mt-6 border-t pt-4 text-center text-sm text-slate-600">oppure accedi senza email</div>
       <TelegramLoginButton label="Accedi o registrati con Telegram" />

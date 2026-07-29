@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { CalendarDays, Layers, Plus, Trophy, Users } from 'lucide-react'
 import api, { setAuthToken } from '../services/api'
 import { CharacterMoodCard } from '../components/CharacterMoodCard'
+import { RegisterPasskeyButton } from '../components/PasskeyButton'
 
 const token = localStorage.getItem('fd_token')
 if (token) setAuthToken(token)
@@ -21,7 +22,7 @@ export default function Dashboard() {
     return () => { mounted = false }
   }, [navigate])
   const stats = overview?.stats
-  return <div>
+  return <div><RegisterPasskeyButton />
     <div className="page-heading"><div><p className="eyebrow">La tua base operativa</p><h2>Benvenuto nel caos</h2></div></div>
     {user ? <div className="dashboard-intro"><div className="user-avatar">{user.avatar ? <img src={user.avatar} alt="" /> : user.username?.slice(0, 1).toUpperCase()}</div><div><strong>Ciao, {user.username}</strong><p className="muted m-0 text-sm">{user.crewRole || 'Jolly'} {user.city ? `· ${user.city}` : '· pronto per la prossima storia.'}</p></div><span className="intro-live"><i />drama room attiva</span></div> : <p className="muted">Caricamento profilo…</p>}
     <section className="dashboard-stats">{[[Trophy, `${stats?.points ?? 0}`, 'Punti totali'], [Users, `${stats?.groups ?? 0}`, 'Gruppi attivi'], [Layers, `${stats?.cards ?? 0}`, 'Carte nel mazzo']].map(([Icon, value, label]: any) => <article key={label}><Icon size={18} /><strong>{value}</strong><span>{label}</span></article>)}</section>
