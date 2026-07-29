@@ -16,6 +16,20 @@ const telegramSchema = z.object({
   hash: z.string().regex(/^[a-f0-9]{64}$/i)
 }).strict()
 const telegramMiniAppSchema = z.object({ initData: z.string().min(1).max(8192) })
+const telegramLoginTicketSchema = z.object({ ticket: z.string().regex(/^[A-Za-z0-9_-]{32,128}$/) })
+
+const appUrl = (process.env.PUBLIC_APP_URL || 'https://fanta-drama.onrender.com').replace(/\/$/, '')
+const telegramLoginCallbackUrl = process.env.TELEGRAM_LOGIN_REDIRECT_URL || `${appUrl}/api/auth/telegram/oidc/callback`
+
+function randomUrlToken(bytes = 32) {
+  return crypto.randomBytes(bytes).toString('base64url')
+}
+
+function telegramLoginConfig() {
+  const clientId = process.env.TELEGRAM_LOGIN_CLIENT_ID
+  const clientSecret = process.env.TELEGRAM_LOGIN_CLIENT_SECRET
+  return clientId && clientSecret ? { clientId, clientSecret } : null
+}
 
 function isValidTelegramLogin(data: z.infer<typeof telegramSchema>) {
   const token = process.env.TELEGRAM_BOT_TOKEN
@@ -74,6 +88,85 @@ router.post('/telegram', async (req, res) => {
     return res.json(await telegramCustomToken({ id: Number(data.id), first_name: data.first_name, last_name: data.last_name, username: data.username, photo_url: data.photo_url }))
   } catch (error: any) {
     return res.status(400).json({ error: error.message ?? 'telegram_login_failed' })
+  }
+})
+
+// Browser login: Telegram is used only for authorization, then redirects back
+// to FantaDrama. This is intentionally separate from Mini App authentication.
+router.get('/telegram/oidc/start', async (_req, res) => {
+  const config = telegramLoginConfig()
+  if (!config) return res.redirect(`${appUrl}/login?telegram_error=not_configured`)
+  const state = randomUrlToken()
+  const codeVerifier = randomUrlToken(48)
+  const nonce = randomUrlToken()
+  const challenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url')
+  await db.collection('telegramOidcRequests').doc(state).set({
+    codeVerifier, nonce, redirectUri: telegramLoginCallbackUrl,
+    createdAt: new Date().toISOString(), expiresAt: Date.now() + 10 * 60 * 1000
+  })
+  const params = new URLSearchParams({
+    client_id: config.clientId, redirect_uri: telegramLoginCallbackUrl, response_type: 'code',
+    scope: 'openid profile telegram:bot_access', state, nonce,
+    code_challenge: challenge, code_challenge_method: 'S256'
+  })
+  return res.redirect(`https://oauth.telegram.org/auth?${params.toString()}`)
+})
+
+router.get('/telegram/oidc/callback', async (req, res) => {
+  const error = typeof req.query.error === 'string' ? req.query.error : null
+  const state = typeof req.query.state === 'string' ? req.query.state : ''
+  const code = typeof req.query.code === 'string' ? req.query.code : ''
+  if (error || !state || !code) return res.redirect(`${appUrl}/login?telegram_error=${encodeURIComponent(error || 'cancelled')}`)
+  const config = telegramLoginConfig()
+  if (!config) return res.redirect(`${appUrl}/login?telegram_error=not_configured`)
+  try {
+    const requestRef = db.collection('telegramOidcRequests').doc(state)
+    const request = await requestRef.get()
+    const pending = request.data() as { codeVerifier?: string, nonce?: string, redirectUri?: string, expiresAt?: number } | undefined
+    await requestRef.delete()
+    if (!pending?.codeVerifier || !pending.redirectUri || !pending.expiresAt || pending.expiresAt < Date.now()) throw new Error('expired_request')
+    const basic = Buffer.from(`${config.clientId}:${config.clientSecret}`).toString('base64')
+    const tokenResponse = await fetch('https://oauth.telegram.org/token', {
+      method: 'POST',
+      headers: { authorization: `Basic ${basic}`, 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: pending.redirectUri, client_id: config.clientId, code_verifier: pending.codeVerifier }).toString()
+    })
+    const tokenPayload = await tokenResponse.json() as { id_token?: string }
+    if (!tokenResponse.ok || !tokenPayload.id_token) throw new Error('token_exchange_failed')
+    const [headerPart, payloadPart, signaturePart] = tokenPayload.id_token.split('.')
+    if (!headerPart || !payloadPart || !signaturePart) throw new Error('invalid_id_token')
+    const header = JSON.parse(Buffer.from(headerPart, 'base64url').toString('utf8')) as { alg?: string, kid?: string }
+    const claims = JSON.parse(Buffer.from(payloadPart, 'base64url').toString('utf8')) as { iss?: string, aud?: string | string[], exp?: number, nonce?: string, id?: number | string, given_name?: string, family_name?: string, preferred_username?: string, picture?: string }
+    const keysResponse = await fetch('https://oauth.telegram.org/.well-known/jwks.json')
+    const keysPayload = await keysResponse.json() as { keys?: Array<crypto.JsonWebKey & { kid?: string }> }
+    const key = keysPayload.keys?.find((item) => item.kid === header.kid)
+    const validSignature = header.alg === 'RS256' && key && crypto.verify('RSA-SHA256', Buffer.from(`${headerPart}.${payloadPart}`), crypto.createPublicKey({ key, format: 'jwk' }), Buffer.from(signaturePart, 'base64url'))
+    const audience = Array.isArray(claims.aud) ? claims.aud.includes(config.clientId) : claims.aud === config.clientId
+    if (!validSignature || claims.iss !== 'https://oauth.telegram.org' || !audience || !claims.exp || claims.exp * 1000 < Date.now() || claims.nonce !== pending.nonce || !claims.id || !claims.given_name) throw new Error('invalid_id_token')
+    const login = await telegramCustomToken({ id: Number(claims.id), first_name: claims.given_name, last_name: claims.family_name, username: claims.preferred_username, photo_url: claims.picture })
+    const ticket = randomUrlToken()
+    await db.collection('telegramLoginTickets').doc(ticket).set({ ...login, createdAt: new Date().toISOString(), expiresAt: Date.now() + 2 * 60 * 1000, usedAt: null })
+    return res.redirect(`${appUrl}/telegram?ticket=${encodeURIComponent(ticket)}`)
+  } catch (callbackError) {
+    console.error('Telegram OIDC login failed', callbackError)
+    return res.redirect(`${appUrl}/login?telegram_error=failed`)
+  }
+})
+
+router.post('/telegram/complete', async (req, res) => {
+  try {
+    const { ticket } = telegramLoginTicketSchema.parse(req.body)
+    const ticketRef = db.collection('telegramLoginTickets').doc(ticket)
+    const login = await db.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(ticketRef)
+      const data = snapshot.data() as { customToken?: string, username?: string, expiresAt?: number, usedAt?: string | null } | undefined
+      if (!snapshot.exists || !data?.customToken || data.usedAt || !data.expiresAt || data.expiresAt < Date.now()) throw new Error('invalid_ticket')
+      transaction.update(ticketRef, { usedAt: new Date().toISOString() })
+      return { customToken: data.customToken, username: data.username }
+    })
+    return res.json(login)
+  } catch {
+    return res.status(401).json({ error: 'invalid_telegram_ticket' })
   }
 })
 

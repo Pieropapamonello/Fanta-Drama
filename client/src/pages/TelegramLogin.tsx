@@ -11,8 +11,9 @@ export default function TelegramLogin() {
   useEffect(() => {
     const completeLogin = async () => {
       const payload = Object.fromEntries(new URLSearchParams(window.location.search).entries())
-      if (!payload.id || !payload.hash || !payload.auth_date) throw new Error('Dati Telegram mancanti')
-      const response = await api.post('/auth/telegram', payload)
+      const response = payload.ticket
+        ? await api.post('/auth/telegram/complete', { ticket: payload.ticket })
+        : await api.post('/auth/telegram', payload)
       const credential = await signInWithCustomToken(firebaseAuth, response.data.customToken)
       const token = await credential.user.getIdToken()
       localStorage.setItem('fd_token', token)

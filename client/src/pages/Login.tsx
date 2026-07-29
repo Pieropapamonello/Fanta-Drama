@@ -59,6 +59,11 @@ export default function Login() {
     document.head.appendChild(script)
     return () => script.remove()
   }, [navigate])
+  useEffect(() => {
+    const reason = new URLSearchParams(window.location.search).get('telegram_error')
+    if (reason === 'not_configured') setTelegramMessage('L’accesso Telegram è in fase di attivazione. Riprova tra poco.')
+    else if (reason) setTelegramMessage('Accesso Telegram annullato o non riuscito. Riprova quando vuoi.')
+  }, [])
   const onSubmit = async (data: any) => {
     try {
       const credential = await signInWithEmailAndPassword(firebaseAuth, data.email, data.password)
@@ -86,7 +91,7 @@ export default function Login() {
           <strong>Continua con Telegram</strong>
           <small>Nessuna email o password necessaria.</small>
         </div>
-        <TelegramLoginButton label="Apri Telegram" />
+        <TelegramLoginButton label="Continua con Telegram" />
       </section>
 
       {telegramMessage && <p className="auth-status" role="status">{telegramMessage}</p>}
