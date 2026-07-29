@@ -21,6 +21,20 @@ function eventPhase(event: Record<string, unknown>) {
 
 function withPhase(id: string, data: Record<string, unknown>) { return { ...documentData(id, data), phase: eventPhase(data) } }
 
+async function participantsForEvent(eventId: string, groupId: string) {
+  const [group, auctions] = await Promise.all([db.collection('groups').doc(groupId).get(), db.collection('auctions').where('eventId', '==', eventId).get()])
+  const memberIds = (group.data()?.memberIds as string[] | undefined) ?? []
+  const users = await Promise.all(memberIds.map((userId) => db.collection('users').doc(userId).get()))
+  return users.map((user, index) => {
+    const userId = memberIds[index]; const profile = user.data() ?? {}
+    const cards = auctions.docs.filter((auction) => auction.data().ownerId === userId || (auction.data().status === 'OPEN' && auction.data().leaderId === userId)).map((auction) => {
+      const data = auction.data()
+      return { id: auction.id, title: data.title ?? 'Carta drama', description: data.description ?? '', imageUrl: data.imageUrl ?? '', rarity: data.rarity ?? 'COMMON', state: data.status === 'WON' ? 'Vinta' : 'Offerta in testa' }
+    })
+    return { userId, username: profile.username ?? 'Giocatore', avatar: profile.avatar ?? '', crewRole: profile.crewRole ?? 'Jolly', bio: profile.bio ?? '', city: profile.city ?? '', motto: profile.motto ?? '', cards }
+  })
+}
+
 async function announceNewEvent(eventId: string, event: Record<string, unknown>, excludedUserId: string) {
   const liveUpdate = await createDramaBeat({ event: { title: String(event.title), description: String(event.description ?? '') }, phase: 'OPENED' })
   await db.collection('events').doc(eventId).set({ liveUpdate, liveUpdateAt: new Date().toISOString() }, { merge: true })
@@ -62,7 +76,8 @@ router.get('/:id', requireAuth, async (req: AuthRequest, res) => {
   const snapshot = await db.collection('events').doc(req.params.id).get()
   if (!snapshot.exists || (!await groupRole(snapshot.data()!.groupId, req.userId!) && !await isPlatformAdmin(req.userId!))) return res.status(404).json({ error: 'not_found' })
   void sendAuctionReminder(snapshot.id)
-  return res.json({ event: withPhase(snapshot.id, snapshot.data() as Record<string, unknown>) })
+  const event = snapshot.data() as Record<string, unknown>
+  return res.json({ event: { ...withPhase(snapshot.id, event), participants: await participantsForEvent(snapshot.id, String(event.groupId)) } })
 })
 
 router.get('/:id/leaderboard', requireAuth, async (req: AuthRequest, res) => {

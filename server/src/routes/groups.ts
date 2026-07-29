@@ -14,6 +14,14 @@ function inviteCode() {
   return crypto.randomBytes(6).toString('base64url').toUpperCase().slice(0, 8)
 }
 
+async function publicMembers(memberIds: string[]) {
+  const snapshots = await Promise.all(memberIds.map((userId) => db.collection('users').doc(userId).get()))
+  return snapshots.map((snapshot, index) => {
+    const user = snapshot.data() ?? {}
+    return { id: memberIds[index], username: user.username ?? 'Giocatore', avatar: user.avatar ?? '', crewRole: user.crewRole ?? 'Jolly', bio: user.bio ?? '', city: user.city ?? '', motto: user.motto ?? '' }
+  })
+}
+
 router.post('/', requireAuth, async (req: AuthRequest, res) => {
   try {
     const data = createSchema.parse(req.body)
@@ -57,13 +65,19 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
   const snapshot = await (await isPlatformAdmin(req.userId!)
     ? db.collection('groups').get()
     : db.collection('groups').where('memberIds', 'array-contains', req.userId!).get())
-  return res.json({ groups: snapshot.docs.map((doc) => documentData(doc.id, doc.data() as Record<string, unknown>)) })
+  const groups = await Promise.all(snapshot.docs.map(async (doc) => {
+    const group = doc.data() as Record<string, unknown>
+    const memberIds = (group.memberIds as string[] | undefined) ?? []
+    return { ...documentData(doc.id, group), memberCount: memberIds.length, members: await publicMembers(memberIds) }
+  }))
+  return res.json({ groups })
 })
 
 router.get('/:id', requireAuth, async (req: AuthRequest, res) => {
   const snapshot = await db.collection('groups').doc(req.params.id).get()
   if (!snapshot.exists || (!(snapshot.data()?.memberIds as string[]).includes(req.userId!) && !await isPlatformAdmin(req.userId!))) return res.status(404).json({ error: 'not_found' })
-  return res.json({ group: documentData(snapshot.id, snapshot.data() as Record<string, unknown>) })
+  const group = snapshot.data() as Record<string, unknown>
+  return res.json({ group: { ...documentData(snapshot.id, group), members: await publicMembers((group.memberIds as string[] | undefined) ?? []) } })
 })
 
 router.delete('/:id', requireAuth, async (req: AuthRequest, res) => {
