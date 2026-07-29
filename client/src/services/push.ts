@@ -14,6 +14,9 @@ function workerUrl() {
 }
 
 export async function enableDeviceNotifications() {
+  const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream
+  const installed = window.matchMedia('(display-mode: standalone)').matches || Boolean((navigator as any).standalone)
+  if (isIos && !installed) return { ok: false, message: 'Su iPhone prima installa FantaDrama sulla schermata Home, poi aprila dall’icona e attiva gli avvisi.' }
   if (!('Notification' in window) || !('serviceWorker' in navigator) || !await isSupported()) return { ok: false, message: 'Questo browser non supporta le notifiche dell’app.' }
   if (Notification.permission === 'denied') return { ok: false, message: 'Le notifiche sono bloccate nelle impostazioni del dispositivo.' }
   const permission = await Notification.requestPermission()

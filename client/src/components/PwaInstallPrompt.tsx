@@ -1,4 +1,16 @@
 import React, { useEffect, useState } from 'react'
 import { Download } from 'lucide-react'
 type InstallPrompt = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }> }
-export default function PwaInstallPrompt() { const [deferred, setDeferred] = useState<InstallPrompt | null>(null); const [installed, setInstalled] = useState(() => window.matchMedia('(display-mode: standalone)').matches); useEffect(() => { const ready = (event: Event) => { event.preventDefault(); setDeferred(event as InstallPrompt) }; const done = () => { setInstalled(true); setDeferred(null) }; window.addEventListener('beforeinstallprompt', ready); window.addEventListener('appinstalled', done); return () => { window.removeEventListener('beforeinstallprompt', ready); window.removeEventListener('appinstalled', done) } }, []); const install = async () => { if (!deferred) return; await deferred.prompt(); const choice = await deferred.userChoice; if (choice.outcome === 'accepted') setDeferred(null) }; if (installed || !deferred) return null; return <button type="button" className="pwa-install" onClick={() => void install()}><Download size={15} /> Installa app</button> }
+const isIos = () => /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream
+
+export default function PwaInstallPrompt() {
+  const [deferred, setDeferred] = useState<InstallPrompt | null>(null)
+  const [installed, setInstalled] = useState(() => window.matchMedia('(display-mode: standalone)').matches || Boolean((navigator as any).standalone))
+  const [showIosHelp, setShowIosHelp] = useState(false)
+  useEffect(() => { const ready = (event: Event) => { event.preventDefault(); setDeferred(event as InstallPrompt) }; const done = () => { setInstalled(true); setDeferred(null) }; window.addEventListener('beforeinstallprompt', ready); window.addEventListener('appinstalled', done); return () => { window.removeEventListener('beforeinstallprompt', ready); window.removeEventListener('appinstalled', done) } }, [])
+  const install = async () => { if (!deferred) return; await deferred.prompt(); const choice = await deferred.userChoice; if (choice.outcome === 'accepted') setDeferred(null) }
+  if (installed) return null
+  if (deferred) return <button type="button" className="pwa-install" onClick={() => void install()}><Download size={15} /> Installa app</button>
+  if (!isIos()) return null
+  return <><button type="button" className="pwa-install" onClick={() => setShowIosHelp(true)}><Download size={15} /> Installa su iPhone</button>{showIosHelp && <div className="pwa-install-help" role="dialog" aria-modal="true"><strong>Installa FantaDrama</strong><p>Apri il menu Condividi di Safari o Brave, scegli “Aggiungi a Home” e conferma “Apri come app web”.</p><button type="button" onClick={() => setShowIosHelp(false)}>Ho capito</button></div>}</>
+}
