@@ -50,16 +50,15 @@ export async function notifyUser(userId: string, payload: NotificationPayload) {
   ])
   const user = userSnapshot.exists ? userSnapshot.data()! : {}
   const link = linkSnapshot.exists ? linkSnapshot.data()! : {}
-  const preference = user.notificationPreference === 'TELEGRAM' || user.notificationPreference === 'EMAIL' || user.notificationPreference === 'BOTH' ? user.notificationPreference : 'BOTH'
-  const results: Array<{ channel: string, status: string }> = []
-  if ((preference === 'TELEGRAM' || preference === 'BOTH') && link.chatId) {
+  const preference = ['IN_APP', 'TELEGRAM', 'EMAIL', 'BOTH', 'ALL'].includes(String(user.notificationPreference)) ? String(user.notificationPreference) : 'ALL'
+  const results: Array<{ channel: string, status: string }> = [{ channel: 'in_app', status: 'stored' }]
+  if ((preference === 'TELEGRAM' || preference === 'BOTH' || preference === 'ALL') && link.chatId) {
     try {
       await sendTelegramMessage(String(link.chatId), `✨ ${payload.title}\n\n${payload.message}`, payload.path ?? '/dashboard')
       results.push({ channel: 'telegram', status: 'sent' })
     } catch { results.push({ channel: 'telegram', status: 'failed' }) }
   }
-  if ((preference === 'EMAIL' || preference === 'BOTH') && user.email) results.push(await sendEmail(String(user.email), payload))
-  if (!results.length) results.push({ channel: 'in_app', status: 'stored' })
+  if ((preference === 'EMAIL' || preference === 'BOTH' || preference === 'ALL') && user.email) results.push(await sendEmail(String(user.email), payload))
   await db.collection('notifications').add({ userId, ...payload, preference, deliveries: results, createdAt: new Date().toISOString() })
   return results
 }

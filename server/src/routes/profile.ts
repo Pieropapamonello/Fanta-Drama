@@ -9,7 +9,7 @@ const avatars = ['/characters/pulse.png', '/characters/mischief.png', '/characte
 const profileSchema = z.object({
   username: z.string().trim().min(3).max(30), avatar: z.union([z.enum(avatars), z.string().url().max(2048)]), bio: z.string().trim().max(160).optional(), city: z.string().trim().max(48).optional(),
   crewRole: z.enum(['Stratega', 'Creatore di caos', 'Osservatore', 'Regista del drama', 'Jolly']).optional(), motto: z.string().trim().max(90).optional(),
-  notificationPreference: z.enum(['TELEGRAM', 'EMAIL', 'BOTH']).optional(),
+  notificationPreference: z.enum(['IN_APP', 'TELEGRAM', 'EMAIL', 'BOTH', 'ALL']).optional(),
 })
 
 async function profileWithConnections(userId: string) {
@@ -50,6 +50,18 @@ router.get('/overview', requireAuth, async (req: AuthRequest, res) => {
   })
 })
 
+router.get('/notifications', requireAuth, async (req: AuthRequest, res) => {
+  const snapshot = await db.collection('notifications').where('userId', '==', req.userId!).get()
+  const notifications = snapshot.docs.map((item) => documentData(item.id, item.data() as Record<string, unknown>)).sort((left, right) => String(right.createdAt ?? '').localeCompare(String(left.createdAt ?? ''))).slice(0, 50)
+  return res.json({ notifications })
+})
+
+router.post('/notifications/read', requireAuth, async (req: AuthRequest, res) => {
+  const snapshot = await db.collection('notifications').where('userId', '==', req.userId!).get()
+  const batch = db.batch(); snapshot.docs.forEach((item) => batch.update(item.ref, { readAt: new Date().toISOString() })); await batch.commit()
+  return res.json({ ok: true })
+})
+
 router.put('/me', requireAuth, async (req: AuthRequest, res) => {
   try {
     const data = profileSchema.parse(req.body)
@@ -59,7 +71,7 @@ router.put('/me', requireAuth, async (req: AuthRequest, res) => {
     const current = await ref.get()
     if (!current.exists) return res.status(404).json({ error: 'not_found' })
     const authUser = await firebaseAuth.getUser(req.userId!)
-    const profile = { ...current.data(), username: data.username, avatar: data.avatar, email: authUser.email ?? '', bio: data.bio ?? '', city: data.city ?? '', crewRole: data.crewRole ?? 'Jolly', motto: data.motto ?? '', notificationPreference: data.notificationPreference ?? 'BOTH', profileCompleted: true, updatedAt: new Date().toISOString() }
+    const profile = { ...current.data(), username: data.username, avatar: data.avatar, email: authUser.email ?? '', bio: data.bio ?? '', city: data.city ?? '', crewRole: data.crewRole ?? 'Jolly', motto: data.motto ?? '', notificationPreference: data.notificationPreference ?? 'ALL', profileCompleted: true, updatedAt: new Date().toISOString() }
     await ref.set(profile)
     return res.json({ user: await profileWithConnections(req.userId!) })
   } catch (error: any) { return res.status(400).json({ error: error.message ?? 'invalid_profile' }) }
