@@ -102,7 +102,7 @@ export default function GroupDetail() {
       {selectedMember.bio && <p>{selectedMember.bio}</p>}
       {selectedMember.motto && <blockquote>“{selectedMember.motto}”</blockquote>}
       <div className="participant-cards"><strong>Carte acquistate / offerte in testa</strong>
-        {selectedMember.cards?.length ? selectedMember.cards.map((card: any) => <Link key={card.id} to={`/events/${card.eventId}`}>
+        {selectedMember.cards?.length ? selectedMember.cards.map((card: any) => <Link key={card.id} to={card.eventId ? `/events/${card.eventId}` : `/groups/${group.id}/cards`}>
           {card.imageUrl ? <img src={card.imageUrl} alt="" /> : <i>✦</i>}
           <span><b>{card.title}</b><small>{card.rarity} · {card.state} · {card.credits} crediti</small><em>{card.eventTitle}</em></span>
         </Link>) : <p>Per ora non ha carte acquistate né offerte in testa in questa crew.</p>}

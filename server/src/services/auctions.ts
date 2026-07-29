@@ -71,7 +71,9 @@ export async function placeBid(auctionId: string, userId: string, amount: number
     transaction.set(auctionRef.collection('bids').doc(), { userId, amount, createdAt: now })
     return { auction: { ...auction, id: auctionSnapshot.id, currentBid: amount, leaderId: userId, leaderName }, previousLeaderId, previousBid }
   })
-  void notifyGroupMembers(String(result.auction.groupId), { kind: 'AUCTION_OUTBID', title: `Nuova offerta · ${result.auction.title}`, message: `${profileName(result.auction.leaderName)} ha puntato ${amount} crediti. Apri l’evento per rilanciare prima della chiusura.`, path: `/events/${result.auction.eventId}` }, [userId])
+  const marketPath = result.auction.marketScope === 'GROUP' ? `/groups/${result.auction.groupId}/cards` : `/events/${result.auction.eventId}`
+  const marketLabel = result.auction.marketScope === 'GROUP' ? 'Apri il mercato della crew' : 'Apri l’evento'
+  void notifyGroupMembers(String(result.auction.groupId), { kind: 'AUCTION_OUTBID', title: `Nuova offerta · ${result.auction.title}`, message: `${profileName(result.auction.leaderName)} ha puntato ${amount} crediti. ${marketLabel} per rilanciare prima della chiusura.`, path: marketPath }, [userId])
   return result.auction
 }
 
@@ -92,7 +94,11 @@ export async function finalizeAuction(auctionId: string) {
     transaction.set(db.collection('creditTransactions').doc(), { userId: auction.leaderId, amount: -paid, kind: 'AUCTION_PURCHASE', auctionId: snapshot.id, eventId: auction.eventId, createdAt: now })
     return { ...auction, id: snapshot.id, status: 'WON', ownerId: auction.leaderId }
   })
-  if (result?.status === 'WON') void notifyUser(String(result.ownerId), { kind: 'AUCTION_WON', title: `Hai vinto · ${result.title}`, message: `La carta è tua per questo evento: hai speso ${result.currentBid} crediti.`, path: `/events/${result.eventId}` })
+  if (result?.status === 'WON') {
+    const path = result.marketScope === 'GROUP' ? `/groups/${result.groupId}/cards` : `/events/${result.eventId}`
+    const context = result.marketScope === 'GROUP' ? 'per questa crew' : 'per questo evento'
+    void notifyUser(String(result.ownerId), { kind: 'AUCTION_WON', title: `Hai vinto · ${result.title}`, message: `La carta è tua ${context}: hai speso ${result.currentBid} crediti.`, path })
+  }
   return result
 }
 

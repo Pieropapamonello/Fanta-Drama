@@ -5,11 +5,15 @@ import { FieldValue } from 'firebase-admin/firestore'
 import { requireAuth, AuthRequest } from '../middleware/auth'
 import { db, documentData } from '../services/firebase'
 import { isPlatformAdmin } from '../services/platform-admin'
+import { ensureWallet, refreshAuctions } from '../services/auctions'
+import { notifyGroupMembers } from '../services/notifications'
+import { starterCards } from '../data/starter-content'
 
 const router = Router()
 const createSchema = z.object({ name: z.string().trim().min(1).max(80), description: z.string().trim().max(500).optional() })
 const joinSchema = z.object({ code: z.string().trim().min(1).max(16) })
 const messageSchema = z.object({ message: z.string().trim().min(1).max(700) })
+const marketCardSchema = z.object({ cardKey: z.string().regex(/^(starter|custom):[a-zA-Z0-9_-]+$/) })
 
 function inviteCode() {
   return crypto.randomBytes(6).toString('base64url').toUpperCase().slice(0, 8)
@@ -25,8 +29,8 @@ async function publicMembers(memberIds: string[]) {
 
 async function memberCardsInGroup(groupId: string, memberId: string) {
   const events = await db.collection('events').where('groupId', '==', groupId).get()
-  const auctions = await Promise.all(events.docs.map((event) => db.collection('auctions').where('eventId', '==', event.id).get()))
-  return auctions.flatMap((snapshot) => snapshot.docs).filter((auction) => {
+  const auctions = await db.collection('auctions').where('groupId', '==', groupId).get()
+  return auctions.docs.filter((auction) => {
     const data = auction.data()
     return data.ownerId === memberId || (data.status === 'OPEN' && data.leaderId === memberId)
   }).map((auction) => {
@@ -34,7 +38,7 @@ async function memberCardsInGroup(groupId: string, memberId: string) {
     return {
       id: auction.id,
       eventId: card.eventId ?? '',
-      eventTitle: events.docs.find((event) => event.id === card.eventId)?.data().title ?? 'Evento della crew',
+      eventTitle: events.docs.find((event) => event.id === card.eventId)?.data().title ?? (card.marketScope === 'GROUP' ? 'Asta privata della crew' : 'Evento della crew'),
       title: card.title ?? 'Carta Drama',
       description: card.description ?? '',
       imageUrl: card.imageUrl ?? '',
@@ -43,6 +47,23 @@ async function memberCardsInGroup(groupId: string, memberId: string) {
       state: card.status === 'WON' ? 'Acquistata' : 'Offerta in testa'
     }
   })
+}
+
+async function marketCard(cardKey: string): Promise<Record<string, any> | null> {
+  if (cardKey.startsWith('starter:')) {
+    const card = starterCards.find((item) => item.slug === cardKey.slice('starter:'.length))
+    if (!card || !card.imageUrl) return null
+    return { key: cardKey, ...card }
+  }
+  const card = await db.collection('cardCatalog').doc(cardKey.slice('custom:'.length)).get()
+  if (!card.exists || card.data()?.status === 'REJECTED' || !card.data()?.imageUrl) return null
+  return { key: cardKey, ...(card.data() as Record<string, any>) }
+}
+
+async function canAccessGroup(groupId: string, userId: string) {
+  const group = await db.collection('groups').doc(groupId).get()
+  const members = (group.data()?.memberIds as string[] | undefined) ?? []
+  return { group, allowed: group.exists && (members.includes(userId) || await isPlatformAdmin(userId)) }
 }
 
 router.post('/', requireAuth, async (req: AuthRequest, res) => {
@@ -112,6 +133,34 @@ router.post('/:id/messages', requireAuth, async (req: AuthRequest, res) => {
     await ref.set(message)
     return res.status(201).json({ message: documentData(ref.id, message) })
   } catch (error: any) { return res.status(400).json({ error: error.message ?? 'message_failed' }) }
+})
+
+router.get('/:id/market-auctions', requireAuth, async (req: AuthRequest, res) => {
+  const { group, allowed } = await canAccessGroup(req.params.id, req.userId!)
+  if (!allowed) return res.status(404).json({ error: 'not_found' })
+  await refreshAuctions()
+  const [auctions, wallet] = await Promise.all([db.collection('auctions').where('groupId', '==', group.id).get(), ensureWallet(req.userId!)])
+  return res.json({ wallet: wallet.data(), auctions: auctions.docs.filter((auction) => auction.data().marketScope === 'GROUP').map((auction) => documentData(auction.id, auction.data() as Record<string, unknown>)) })
+})
+
+router.post('/:id/market-auctions', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { group, allowed } = await canAccessGroup(req.params.id, req.userId!)
+    if (!allowed) return res.status(404).json({ error: 'not_found' })
+    const { cardKey } = marketCardSchema.parse(req.body)
+    const card = await marketCard(cardKey)
+    if (!card) return res.status(404).json({ error: 'catalog_card_not_found' })
+    const current = await db.collection('auctions').where('groupId', '==', group.id).get()
+    const existing = current.docs.find((auction) => auction.data().marketScope === 'GROUP' && auction.data().cardKey === cardKey)
+    if (existing) return res.json({ auction: documentData(existing.id, existing.data() as Record<string, unknown>), alreadyStarted: true })
+    const creator = await db.collection('users').doc(req.userId!).get()
+    const ref = db.collection('auctions').doc()
+    const now = new Date(); const closesAt = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString()
+    const auction = { groupId: group.id, eventId: null, marketScope: 'GROUP', cardKey, title: card.title, description: card.description, rarity: card.rarity ?? 'COMMON', type: card.type ?? 'YES_NO', imageUrl: card.imageUrl, creatorName: card.creatorName ?? null, openingBid: 20, minIncrement: 5, currentBid: 0, leaderId: null, leaderName: null, status: 'OPEN', opensAt: now.toISOString(), closesAt, requestedById: req.userId!, requestedByName: creator.data()?.username ?? 'Giocatore', createdAt: now.toISOString(), updatedAt: now.toISOString() }
+    await ref.set(auction)
+    void notifyGroupMembers(group.id, { kind: 'AUCTION_OPENED', title: `Nuova asta · ${auction.title}`, message: `${auction.requestedByName} ha richiesto questa carta. L’asta è aperta: fai un’offerta o rilancia entro 24 ore.`, path: `/groups/${group.id}/cards` }, [req.userId!])
+    return res.status(201).json({ auction: documentData(ref.id, auction), alreadyStarted: false })
+  } catch (error: any) { return res.status(400).json({ error: error.message ?? 'market_auction_failed' }) }
 })
 
 router.get('/:id/members/:memberId', requireAuth, async (req: AuthRequest, res) => {
