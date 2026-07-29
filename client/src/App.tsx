@@ -1,7 +1,7 @@
 import React from 'react'
 import { Routes, Route, Link, NavLink, useNavigate } from 'react-router-dom'
 import { signOut } from 'firebase/auth'
-import { CalendarDays, Flame, Home, Layers, User, Users } from 'lucide-react'
+import { CalendarDays, Home, Layers, LogOut, User, Users } from 'lucide-react'
 import { firebaseAuth } from './services/firebase'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
@@ -25,6 +25,7 @@ import AdminConsole from './pages/AdminConsole'
 import AdminLogin from './pages/AdminLogin'
 import Notifications from './pages/Notifications'
 import PwaInstallPrompt from './components/PwaInstallPrompt'
+import BrandMark from './components/BrandMark'
 
 function Header() {
   const navigate = useNavigate()
@@ -35,7 +36,7 @@ function Header() {
     navigate('/')
   }
   return <header className="app-header"><div className="app-header-inner">
-    <Link to="/" className="brand" onDoubleClick={(event) => { event.preventDefault(); navigate('/admin') }}><span className="brand-mark"><Flame size={18} fill="currentColor" /></span>FantaDrama</Link>
+    <Link to="/" className="brand" onDoubleClick={(event) => { event.preventDefault(); navigate('/admin') }}><BrandMark />FantaDrama</Link>{loggedIn && <button type="button" className="mobile-exit" onClick={logout}><LogOut size={15} /> Esci</button>}
     <nav className="nav-links">{loggedIn ? <>
       <Link to="/dashboard">Dashboard</Link><Link to="/groups">Gruppi</Link><Link to="/events">Eventi</Link><Link to="/cards">Carte</Link><Link to="/notifications">Notifiche</Link><Link to="/profile/setup">Profilo</Link><button type="button" onClick={logout}>Esci</button>
     </> : <><Link to="/login">Accedi</Link><Link to="/register">Registrati</Link></>}</nav>
