@@ -15,6 +15,7 @@ router.post('/generate', requireAuth, async (req: AuthRequest, res) => {
     return res.status(201).json({ imageUrl })
   } catch (error: any) {
     const message = error.message ?? 'image_generation_failed'
+    console.error('Image generation failed', { kind: req.body?.kind, userId: req.userId, code: message })
     const unavailable = /^(openai|gemini|grok|cloudflare)_image_generation_not_configured$/.test(message)
       || message === 'dropbox_storage_not_configured'
     return res.status(unavailable ? 503 : 400).json({ error: message })

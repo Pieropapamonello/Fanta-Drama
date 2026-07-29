@@ -18,7 +18,10 @@ export default function ImageForge({ kind, imageUrl, onChange }: { kind: Kind; i
       onChange(response.data.imageUrl); setMessage('Immagine pronta: verrà salvata insieme al contenuto.')
     } catch (error: any) {
       const code = error.response?.data?.error
-      setMessage(/^(openai|gemini|grok|cloudflare)_image_generation_not_configured$/.test(code ?? '') ? 'La generazione IA deve ancora essere attivata dall’amministratore.' : code === 'daily_generation_limit_reached' ? 'Hai raggiunto il limite giornaliero di immagini IA.' : 'Non riesco a generare l’immagine. Modifica la descrizione e riprova.')
+      const configured = /^(openai|gemini|grok|cloudflare)_image_generation_not_configured$/.test(code ?? '')
+      const cloudflare = /^image_generation_failed_\d+$/.test(code ?? '')
+      const dropbox = /^dropbox_/.test(code ?? '')
+      setMessage(configured ? 'La generazione IA deve ancora essere attivata dall’amministratore.' : code === 'daily_generation_limit_reached' ? 'Hai raggiunto il limite giornaliero di immagini IA.' : cloudflare ? `Cloudflare AI non ha completato la richiesta (${code.replace('image_generation_failed_', 'errore ')}). Riprova tra poco.` : dropbox ? 'L’immagine è stata creata ma non riesco a salvarla su Dropbox. Controlla il collegamento Dropbox.' : 'Non riesco a generare l’immagine. Riprova tra poco.')
     } finally { setIsGenerating(false) }
   }
 
