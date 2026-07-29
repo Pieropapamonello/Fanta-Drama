@@ -24,6 +24,7 @@ export default function Login() {
   const { register, handleSubmit } = useForm({ resolver: zodResolver(schema) })
   const navigate = useNavigate()
   const [telegramMessage, setTelegramMessage] = useState<string | null>(null)
+  const afterLoginPath = () => { const target = sessionStorage.getItem('fd_after_login'); sessionStorage.removeItem('fd_after_login'); return target || '/dashboard' }
   const telegramAttempted = useRef(false)
   useEffect(() => {
     const completeMiniAppLogin = async () => {
@@ -41,7 +42,7 @@ export default function Login() {
         localStorage.setItem('fd_token', token)
         setAuthToken(token)
         const bootstrap = await api.post('/auth/bootstrap', { username: response.data.username })
-        navigate(bootstrap.data.user?.profileCompleted ? '/dashboard' : '/profile/setup', { replace: true })
+        navigate(bootstrap.data.user?.profileCompleted ? afterLoginPath() : '/profile/setup', { replace: true })
       } catch (error: any) {
         const detail = error.response?.data?.error
         setTelegramMessage(`Accesso Telegram non riuscito${detail ? `: ${detail}` : ''}. Chiudi e riapri la Mini App dal bot.`)
@@ -71,7 +72,7 @@ export default function Login() {
       const bootstrap = await api.post('/auth/bootstrap')
       localStorage.setItem('fd_token', token)
       setAuthToken(token)
-      navigate(bootstrap.data.user?.profileCompleted ? '/dashboard' : '/profile/setup')
+      navigate(bootstrap.data.user?.profileCompleted ? afterLoginPath() : '/profile/setup')
     } catch (err: any) {
       console.error(err)
       alert('Errore login')
