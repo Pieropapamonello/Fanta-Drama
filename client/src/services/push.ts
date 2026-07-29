@@ -13,6 +13,22 @@ function workerUrl() {
   return `/firebase-push-sw.js?${params.toString()}`
 }
 
+async function waitForActiveWorker(registration: ServiceWorkerRegistration) {
+  if (registration.active) return registration
+  const worker = registration.installing ?? registration.waiting
+  if (!worker) throw new Error('push_service_worker_missing')
+  await new Promise<void>((resolve, reject) => {
+    const timeout = window.setTimeout(() => reject(new Error('push_service_worker_timeout')), 12_000)
+    const check = () => {
+      if (registration.active) { window.clearTimeout(timeout); worker.removeEventListener('statechange', check); resolve() }
+      else if (worker.state === 'redundant') { window.clearTimeout(timeout); worker.removeEventListener('statechange', check); reject(new Error('push_service_worker_redundant')) }
+    }
+    worker.addEventListener('statechange', check)
+    check()
+  })
+  return registration
+}
+
 export async function enableDeviceNotifications() {
   const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream
   const installed = window.matchMedia('(display-mode: standalone)').matches || Boolean((navigator as any).standalone)
@@ -25,6 +41,7 @@ export async function enableDeviceNotifications() {
   if (!vapidKey) return { ok: false, message: 'Permesso concesso. Manca ancora la chiave push di Firebase: l’amministratore la sta configurando.' }
   try {
     const registration = await navigator.serviceWorker.register(workerUrl(), { scope: '/firebase-push/' })
+    await waitForActiveWorker(registration)
     const token = await getToken(getMessaging(firebaseApp), { vapidKey, serviceWorkerRegistration: registration })
     if (!token) return { ok: false, message: 'Non riesco a registrare questo dispositivo alle notifiche.' }
     await api.post('/profile/push-subscriptions', { token, platform: navigator.userAgent.slice(0, 40) })
@@ -38,6 +55,7 @@ export async function enableDeviceNotifications() {
     if (code.includes('token-subscribe-failed')) return { ok: false, message: 'Firebase ha rifiutato la registrazione push. Verifica che “FCM Registration API” sia abilitata nel progetto Firebase.' }
     if (code.includes('permission-blocked')) return { ok: false, message: 'Il browser sta ancora bloccando le notifiche per questo sito.' }
     if (detail.toLowerCase().includes('failed to fetch')) return { ok: false, message: 'Brave sta bloccando Firebase Push. Disattiva Shields per FantaDrama oppure attiva gli avvisi da Chrome.' }
+    if (detail.includes('no active Service Worker')) return { ok: false, message: 'Il servizio notifiche si sta ancora preparando. Attendi qualche secondo e riprova.' }
     return { ok: false, message: `Non riesco a registrare il telefono alle notifiche${code ? ` (${code})` : ''}${detail ? `: ${detail}` : ''}` }
   }
 }
