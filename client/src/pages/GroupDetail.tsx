@@ -75,7 +75,7 @@ export default function GroupDetail() {
           <div><p className="eyebrow">Eventi della crew</p><h3>Compra e gioca le carte</h3></div>
           <div className="group-action-links">
             <Link to="/cards/create" className="btn btn-ghost"><PlusCircle size={15} /> Crea carta</Link>
-            <Link to="/cards" className="btn btn-ghost"><CreditCard size={15} /> Carte</Link>
+            <Link to={`/groups/${group.id}/cards`} className="btn btn-ghost"><CreditCard size={15} /> Carte</Link>
             <Link to="/events/create" className="btn">+ Evento</Link>
           </div>
         </div>
