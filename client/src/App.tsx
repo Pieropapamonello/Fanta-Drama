@@ -8,6 +8,7 @@ import Login from './pages/Login'
 import Register from './pages/Register'
 import Dashboard from './pages/Dashboard'
 import GroupsList from './pages/GroupsList'
+import GroupDetail from './pages/GroupDetail'
 import CreateGroup from './pages/CreateGroup'
 import JoinGroup from './pages/JoinGroup'
 import CharactersList from './pages/CharactersList'
@@ -86,6 +87,7 @@ export default function App() {
       <Route path="/groups" element={<ProtectedRoute><GroupsList /></ProtectedRoute>} />
       <Route path="/groups/create" element={<ProtectedRoute><CreateGroup /></ProtectedRoute>} />
       <Route path="/groups/join" element={<ProtectedRoute><JoinGroup /></ProtectedRoute>} />
+      <Route path="/groups/:groupId" element={<ProtectedRoute><GroupDetail /></ProtectedRoute>} />
       <Route path="/groups/:groupId/characters" element={<ProtectedRoute><CharactersList /></ProtectedRoute>} />
       <Route path="/characters/create" element={<ProtectedRoute><CreateCharacter /></ProtectedRoute>} />
       <Route path="/cards" element={<ProtectedRoute><CardsList /></ProtectedRoute>} />

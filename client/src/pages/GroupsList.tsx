@@ -35,7 +35,7 @@ export default function GroupsList() {
       <div className="collection-grid">
         {groups.map(g => (
           <div key={g.id} className="game-card">
-            <span className="eyebrow">Gruppo privato</span><h3>{g.name}</h3><p>{g.description || 'Qui si decide chi legge meglio il caos.'}</p>
+            <span className="eyebrow">Gruppo privato</span><h3>{g.name}</h3><p>{g.description || 'Qui si decide chi legge meglio il caos.'}</p><Link className="group-open-link" to={`/groups/${g.id}`}>Apri stanza gruppo →</Link>
             <p className="meta">Codice invito: <strong>{g.code}</strong></p><div className="group-member-preview">{(g.members || []).slice(0, 5).map((member: any) => <span key={member.id} title={member.username}>{member.avatar ? <img src={member.avatar} alt="" /> : <i>{member.username?.slice(0, 1)}</i>}</span>)}<b>{g.memberCount || g.memberIds?.length || 0} membri nella crew</b></div>
             <div className="mt-3 flex items-center gap-3"><Link to={`/groups/${g.id}/characters`}>Gestisci personaggi →</Link><button type="button" className="group-share" onClick={() => void shareGroup(g)}><Share2 size={14} /> Invita</button><button type="button" className="text-xs text-rose-300" onClick={() => deleteGroup(g)} disabled={deletingId === g.id}>{deletingId === g.id ? 'Eliminazione…' : 'Elimina'}</button></div>
           </div>

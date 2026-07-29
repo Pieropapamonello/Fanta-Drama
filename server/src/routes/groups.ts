@@ -9,6 +9,7 @@ import { isPlatformAdmin } from '../services/platform-admin'
 const router = Router()
 const createSchema = z.object({ name: z.string().trim().min(1).max(80), description: z.string().trim().max(500).optional() })
 const joinSchema = z.object({ code: z.string().trim().min(1).max(16) })
+const messageSchema = z.object({ message: z.string().trim().min(1).max(700) })
 
 function inviteCode() {
   return crypto.randomBytes(6).toString('base64url').toUpperCase().slice(0, 8)
@@ -71,6 +72,24 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
     return { ...documentData(doc.id, group), memberCount: memberIds.length, members: await publicMembers(memberIds) }
   }))
   return res.json({ groups })
+})
+
+router.get('/:id/messages', requireAuth, async (req: AuthRequest, res) => {
+  const group = await db.collection('groups').doc(req.params.id).get()
+  if (!group.exists || (!(group.data()?.memberIds as string[]).includes(req.userId!) && !await isPlatformAdmin(req.userId!))) return res.status(404).json({ error: 'not_found' })
+  const messages = await db.collection('groupMessages').where('groupId', '==', group.id).get()
+  return res.json({ messages: messages.docs.map((item) => documentData(item.id, item.data() as Record<string, unknown>)).sort((left, right) => String(left.createdAt).localeCompare(String(right.createdAt))).slice(-100) })
+})
+
+router.post('/:id/messages', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const group = await db.collection('groups').doc(req.params.id).get()
+    if (!group.exists || (!(group.data()?.memberIds as string[]).includes(req.userId!) && !await isPlatformAdmin(req.userId!))) return res.status(404).json({ error: 'not_found' })
+    const data = messageSchema.parse(req.body); const user = await db.collection('users').doc(req.userId!).get(); const ref = db.collection('groupMessages').doc()
+    const message = { groupId: group.id, userId: req.userId!, username: user.data()?.username ?? 'Giocatore', avatar: user.data()?.avatar ?? '', message: data.message, createdAt: new Date().toISOString() }
+    await ref.set(message)
+    return res.status(201).json({ message: documentData(ref.id, message) })
+  } catch (error: any) { return res.status(400).json({ error: error.message ?? 'message_failed' }) }
 })
 
 router.get('/:id', requireAuth, async (req: AuthRequest, res) => {
