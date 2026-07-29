@@ -28,11 +28,13 @@ export async function enableDeviceNotifications() {
     return { ok: true, message: 'Notifiche del dispositivo attive su questo telefono.' }
   } catch (error: any) {
     const code = String(error?.code ?? '')
+    const detail = String(error?.message ?? error?.name ?? '').replace(/https?:\/\/\S+/g, '[url]').slice(0, 220)
     console.error('FantaDrama device notification registration failed', error)
+    void api.post('/profile/push-diagnostics', { code: code || undefined, message: detail || undefined }).catch(() => undefined)
     if (code.includes('failed-service-worker-registration')) return { ok: false, message: 'Il servizio notifiche del browser non si è avviato. Chiudi e riapri l’app, poi riprova.' }
     if (code.includes('token-subscribe-failed')) return { ok: false, message: 'Firebase ha rifiutato la registrazione push. Verifica che “FCM Registration API” sia abilitata nel progetto Firebase.' }
     if (code.includes('permission-blocked')) return { ok: false, message: 'Il browser sta ancora bloccando le notifiche per questo sito.' }
-    return { ok: false, message: `Non riesco a registrare il telefono alle notifiche${code ? ` (${code})` : ''}. Prova dall’app installata o da Chrome.` }
+    return { ok: false, message: `Non riesco a registrare il telefono alle notifiche${code ? ` (${code})` : ''}${detail ? `: ${detail}` : ''}` }
   }
 }
 

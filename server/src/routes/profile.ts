@@ -13,6 +13,7 @@ const profileSchema = z.object({
   notificationPreference: z.enum(['IN_APP', 'TELEGRAM', 'EMAIL', 'BOTH', 'ALL']).optional(),
 })
 const pushSubscriptionSchema = z.object({ token: z.string().min(40).max(4096), platform: z.string().max(40).optional() })
+const pushDiagnosticSchema = z.object({ code: z.string().max(120).optional(), message: z.string().max(500).optional() })
 
 async function profileWithConnections(userId: string) {
   const [snapshot, authUser, link] = await Promise.all([db.collection('users').doc(userId).get(), firebaseAuth.getUser(userId), db.collection('telegramLinks').doc(userId).get()])
@@ -72,6 +73,12 @@ router.post('/push-subscriptions', requireAuth, async (req: AuthRequest, res) =>
     await ref.set({ userId: req.userId!, token: data.token, platform: data.platform ?? 'web', updatedAt: new Date().toISOString() }, { merge: true })
     return res.json({ ok: true })
   } catch (error: any) { return res.status(400).json({ error: error.message ?? 'invalid_push_subscription' }) }
+})
+
+router.post('/push-diagnostics', requireAuth, async (req: AuthRequest, res) => {
+  const data = pushDiagnosticSchema.parse(req.body)
+  console.warn('Push registration diagnostic', { userId: req.userId, code: data.code ?? 'unknown', message: data.message ?? 'unknown' })
+  return res.json({ ok: true })
 })
 
 router.put('/me', requireAuth, async (req: AuthRequest, res) => {
