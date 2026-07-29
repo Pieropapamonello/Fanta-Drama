@@ -8,6 +8,7 @@ import { deleteDropboxAsset } from '../services/assets'
 
 const router = Router()
 const passwordSchema = z.object({ password: z.string().min(1).max(256) })
+const mergeSchema = z.object({ primaryId: z.string().min(1), secondaryId: z.string().min(1) }).refine((value) => value.primaryId !== value.secondaryId)
 
 async function requirePlatformAdmin(req: AuthRequest, res: any, next: any) {
   if (!req.userId || !await isPlatformAdmin(req.userId)) return res.status(403).json({ error: 'platform_admin_required' })
@@ -62,6 +63,36 @@ router.delete('/cards/:id', requireAuth, requirePlatformAdmin, async (req: AuthR
   const batch = db.batch(); copies.docs.forEach((copy) => batch.delete(copy.ref)); batch.delete(card.ref); await batch.commit()
   const deletion = await deleteDropboxAsset(typeof card.data()?.imageStoragePath === 'string' ? card.data()?.imageStoragePath : undefined)
   return res.json({ ok: true, removedDeckCopies: copies.size, asset: deletion })
+})
+
+router.post('/users/merge', requireAuth, requirePlatformAdmin, async (req: AuthRequest, res) => {
+  const { primaryId, secondaryId } = mergeSchema.parse(req.body)
+  const [primary, secondary] = await Promise.all([db.collection('users').doc(primaryId).get(), db.collection('users').doc(secondaryId).get()])
+  if (!primary.exists || !secondary.exists) return res.status(404).json({ error: 'user_not_found' })
+  const [groups, cards, catalog, predictions, scores, notifications, telegramLink] = await Promise.all([
+    db.collection('groups').where('memberIds', 'array-contains', secondaryId).get(), db.collection('cards').where('authorId', '==', secondaryId).get(), db.collection('cardCatalog').where('creatorId', '==', secondaryId).get(), db.collection('predictions').where('userId', '==', secondaryId).get(), db.collection('scores').where('userId', '==', secondaryId).get(), db.collection('notifications').where('userId', '==', secondaryId).get(), db.collection('telegramLinks').doc(secondaryId).get()
+  ])
+  for (const group of groups.docs) {
+    const data = group.data(); const members = Array.from(new Set(((data.memberIds as string[]) ?? []).map((id) => id === secondaryId ? primaryId : id)))
+    const roles = { ...(data.memberRoles ?? {}) }; const sourceRole = roles[secondaryId]; if (sourceRole === 'ADMIN' || !roles[primaryId]) roles[primaryId] = sourceRole ?? 'MEMBER'; delete roles[secondaryId]
+    await group.ref.update({ memberIds: members, memberRoles: roles, updatedAt: new Date().toISOString() })
+  }
+  const simpleUpdates = [...cards.docs, ...catalog.docs, ...predictions.docs, ...notifications.docs]
+  while (simpleUpdates.length) {
+    const batch = db.batch()
+    simpleUpdates.splice(0, 400).forEach((doc) => {
+      const collection = doc.ref.parent.id
+      batch.update(doc.ref, collection === 'cardCatalog' ? { creatorId: primaryId } : collection === 'cards' ? { authorId: primaryId } : { userId: primaryId })
+    })
+    await batch.commit()
+  }
+  for (const score of scores.docs) {
+    const data = score.data(); const destination = db.collection('scores').doc(`${primaryId}_${data.eventId}`); const current = await destination.get()
+    await destination.set({ ...data, userId: primaryId, points: Number(data.points ?? 0) + Number(current.data()?.points ?? 0), updatedAt: new Date().toISOString() }, { merge: true }); await score.ref.delete()
+  }
+  if (telegramLink.exists) { await db.collection('telegramLinks').doc(primaryId).set({ ...telegramLink.data(), mergedFrom: secondaryId, updatedAt: new Date().toISOString() }, { merge: true }); await telegramLink.ref.delete() }
+  await db.collection('users').doc(secondaryId).set({ mergedInto: primaryId, mergedAt: new Date().toISOString(), profileCompleted: false }, { merge: true })
+  return res.json({ ok: true, primaryId, moved: { groups: groups.size, cards: cards.size, predictions: predictions.size, scores: scores.size, notifications: notifications.size, telegram: telegramLink.exists } })
 })
 
 router.post('/events/:id/close', requireAuth, async (req: AuthRequest, res) => {
