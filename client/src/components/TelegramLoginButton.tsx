@@ -5,7 +5,7 @@ export default function TelegramLoginButton({ label = 'Continua con Telegram —
   return (
     <a
       href={`https://t.me/${botUsername}?start=app`}
-      className="btn mt-5 inline-flex w-full justify-center bg-sky-500 text-white"
+      className="btn telegram-login-button inline-flex w-full justify-center"
     >
       {label}
     </a>

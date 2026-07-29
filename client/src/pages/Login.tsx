@@ -13,7 +13,7 @@ declare global {
     Telegram?: { WebApp?: { initData: string, ready: () => void, expand: () => void } }
   }
 }
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 
 const schema = z.object({
   email: z.string().email(),
@@ -73,16 +73,40 @@ export default function Login() {
     }
   }
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="max-w-md">
-      <h2 className="text-2xl mb-4">Accedi</h2>
-      <label className="block mb-2">Email</label>
-      <input {...register('email')} className="input" />
-      <label className="block mt-4 mb-2">Password</label>
-      <input type="password" {...register('password')} className="input" />
-      <button className="btn mt-4">Accedi</button><LoginPasskeyButton onSuccess={() => navigate('/dashboard', { replace: true })} />
-      {telegramMessage && <p className="mt-4 text-sm text-slate-700" role="status">{telegramMessage}</p>}
-      <div className="mt-6 border-t pt-4 text-center text-sm text-slate-600">oppure accedi senza email</div>
-      <TelegramLoginButton label="Accedi o registrati con Telegram" />
+    <form onSubmit={handleSubmit(onSubmit)} className="auth-card max-w-md">
+      <div className="auth-heading">
+        <p className="eyebrow">FantaDrama</p>
+        <h2>Entra nel caos</h2>
+        <p>Usa il metodo che preferisci. Potrai collegare gli altri metodi dal profilo.</p>
+      </div>
+
+      <section className="auth-telegram" aria-label="Accesso Telegram">
+        <div>
+          <span>IL PIÙ VELOCE</span>
+          <strong>Continua con Telegram</strong>
+          <small>Nessuna email o password necessaria.</small>
+        </div>
+        <TelegramLoginButton label="Apri Telegram" />
+      </section>
+
+      {telegramMessage && <p className="auth-status" role="status">{telegramMessage}</p>}
+
+      <div className="auth-divider"><span>oppure usa email</span></div>
+
+      <div className="auth-email-fields">
+        <label htmlFor="login-email">Email</label>
+        <input id="login-email" autoComplete="email" {...register('email')} className="input" />
+        <label htmlFor="login-password">Password</label>
+        <input id="login-password" autoComplete="current-password" type="password" {...register('password')} className="input" />
+        <button className="btn auth-email-submit">Accedi con email</button>
+      </div>
+
+      <div className="auth-passkey">
+        <p>Hai già attivato impronta o passkey?</p>
+        <LoginPasskeyButton onSuccess={() => navigate('/dashboard', { replace: true })} />
+      </div>
+
+      <p className="auth-register">Non hai un account? <Link to="/register">Registrati</Link></p>
     </form>
   )
 }

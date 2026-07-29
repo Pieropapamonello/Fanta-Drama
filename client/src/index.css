@@ -75,6 +75,28 @@ form.form-card, main form.max-w-md {
   max-width: 36rem; padding: clamp(1.25rem,4vw,2rem); border:1px solid rgba(255,255,255,.1); border-radius:1.35rem;
   background: linear-gradient(145deg,rgba(27,25,51,.94),rgba(13,13,29,.9)); box-shadow: 0 24px 65px rgba(0,0,0,.26);
 }
+.auth-card { display:grid; gap:1.2rem; }
+.auth-heading h2 { margin:.05rem 0 .35rem; font-size:clamp(2rem,7vw,2.65rem); }
+.auth-heading>p:not(.eyebrow) { margin:0; color:#aba7c0; font-size:.88rem; line-height:1.5; }
+.auth-telegram { display:grid; gap:.8rem; padding:1rem; border:1px solid rgba(81,202,255,.34); border-radius:1rem; background:linear-gradient(120deg,rgba(36,169,255,.13),rgba(132,83,255,.18)); }
+.auth-telegram div { display:grid; gap:.16rem; }
+.auth-telegram span { color:#91e5ff; font-size:.62rem; font-weight:900; letter-spacing:.13em; }
+.auth-telegram strong { color:#fff; font-size:1.05rem; }
+.auth-telegram small { color:#c0bdd2; font-size:.74rem; }
+.auth-telegram .telegram-login-button { margin:0; min-height:3.15rem; background:linear-gradient(120deg,#279fe5,#47c7ff); box-shadow:0 10px 24px rgba(39,159,229,.25); }
+.auth-divider { display:flex; align-items:center; gap:.7rem; color:#86819d; font-size:.69rem; font-weight:800; letter-spacing:.05em; text-transform:uppercase; }
+.auth-divider::before,.auth-divider::after { content:""; height:1px; flex:1; background:rgba(255,255,255,.12); }
+.auth-email-fields { display:grid; gap:.5rem; }
+.auth-email-fields label:not(:first-child) { margin-top:.4rem; }
+.auth-email-submit { width:100%; margin-top:.55rem; }
+.auth-passkey { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.65rem; padding-top:.1rem; }
+.auth-passkey>p { margin:0; color:#aaa6c0; font-size:.74rem; }
+.auth-passkey .passkey-box { display:block; margin:0; padding:0; border:0; background:none; }
+.auth-passkey .passkey-box .btn { min-height:2.35rem; padding:.48rem .65rem; font-size:.72rem; }
+.auth-passkey .passkey-box small { display:block; max-width:15rem; margin-top:.35rem; }
+.auth-register { margin:0; color:#aaa6bf; text-align:center; font-size:.76rem; }
+.auth-register a { color:#9fe8ff; font-weight:850; }
+.auth-status { margin:0; padding:.65rem .75rem; border:1px solid rgba(121,218,255,.26); border-radius:.7rem; color:#bceeff; font-size:.75rem; line-height:1.4; background:rgba(37,166,255,.08); }
 form h2 { font-size:1.85rem; font-weight:850; }
 label { color:#d7d4e6; font-size:.8rem; font-weight:700; letter-spacing:.01em; }
 .input {
