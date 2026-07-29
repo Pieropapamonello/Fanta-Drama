@@ -1,7 +1,7 @@
 import React from 'react'
-import { Routes, Route, Link, useNavigate } from 'react-router-dom'
+import { Routes, Route, Link, NavLink, useNavigate } from 'react-router-dom'
 import { signOut } from 'firebase/auth'
-import { Flame } from 'lucide-react'
+import { CalendarDays, Flame, Home, Layers, User, Users } from 'lucide-react'
 import { firebaseAuth } from './services/firebase'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
@@ -39,6 +39,12 @@ function Header() {
   </div></header>
 }
 
+function MobileNav() {
+  if (!localStorage.getItem('fd_token')) return null
+  const items = [[Home, '/dashboard', 'Home'], [Users, '/groups', 'Crew'], [CalendarDays, '/events', 'Eventi'], [Layers, '/cards', 'Carte'], [User, '/profile/setup', 'Profilo']] as const
+  return <nav className="mobile-nav" aria-label="Navigazione principale">{items.map(([Icon, to, label]) => <NavLink key={to} to={to}><Icon size={19} /><span>{label}</span></NavLink>)}</nav>
+}
+
 export default function App() {
   return <div className="app-shell">
     <Header />
@@ -61,7 +67,7 @@ export default function App() {
       <Route path="/events" element={<ProtectedRoute><EventsList /></ProtectedRoute>} />
       <Route path="/events/create" element={<ProtectedRoute><CreateEvent /></ProtectedRoute>} />
       <Route path="/events/:id" element={<ProtectedRoute><EventDetail /></ProtectedRoute>} />
-    </Routes></main>
+    </Routes></main><MobileNav />
     <footer className="app-footer">FantaDrama è un gioco di intrattenimento tra amici. Nessun denaro reale, nessuna vincita economica.</footer>
   </div>
 }

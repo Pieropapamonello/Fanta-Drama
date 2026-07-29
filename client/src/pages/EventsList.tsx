@@ -17,7 +17,7 @@ export default function EventsList() {
       <div className="page-heading"><div><p className="eyebrow">Il prossimo capitolo</p><h2>Eventi</h2></div><Link to="/events/create" className="btn">+ Crea evento</Link></div>
       <div className="collection-grid">
         {events.map(e => {
-          const mood = eventMood(e.state)
+          const mood = eventMood(e.phase || e.state)
           return <div key={e.id} className={`game-card event-card ${mood.className}`}>
             {e.imageUrl && <img className="event-card-image" src={e.imageUrl} alt="" />}
             <span className="event-status"><i>{mood.icon}</i>{mood.label}</span><h3>{e.title}</h3><p>{e.description || 'Preparati: può succedere di tutto.'}</p>
