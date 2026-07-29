@@ -61,6 +61,18 @@ async function sendDevicePush(userId: string, payload: NotificationPayload) {
   return { channel: 'device', status: deliveries.includes('sent') ? 'sent' : 'failed' }
 }
 
+export async function sendDeviceNotificationTest(userId: string) {
+  const payload: NotificationPayload = {
+    title: 'Avvisi FantaDrama attivi',
+    message: 'Test riuscito: riceverai qui rilanci, eventi e decisioni della crew.',
+    path: '/notifications',
+    kind: 'SCORE_UPDATED'
+  }
+  const delivery = await sendDevicePush(userId, payload)
+  await db.collection('notifications').add({ userId, ...payload, preference: 'DEVICE_TEST', deliveries: [delivery], createdAt: new Date().toISOString() })
+  return delivery
+}
+
 export async function notifyUser(userId: string, payload: NotificationPayload) {
   const [userSnapshot, linkSnapshot] = await Promise.all([
     db.collection('users').doc(userId).get(),

@@ -4,6 +4,7 @@ import crypto from 'crypto'
 import { requireAuth, AuthRequest } from '../middleware/auth'
 import { db, documentData, firebaseAuth } from '../services/firebase'
 import { ensureWallet } from '../services/auctions'
+import { sendDeviceNotificationTest } from '../services/notifications'
 
 const router = Router()
 const avatars = ['/characters/pulse.png', '/characters/mischief.png', '/characters/shock.png', '/characters/calm.png', '/avatars/common/violet-curly.png', '/avatars/common/silver-blue.png'] as const
@@ -78,6 +79,12 @@ router.post('/push-subscriptions', requireAuth, async (req: AuthRequest, res) =>
 router.post('/push-diagnostics', requireAuth, async (req: AuthRequest, res) => {
   const data = pushDiagnosticSchema.parse(req.body)
   console.warn('Push registration diagnostic', { userId: req.userId, code: data.code ?? 'unknown', message: data.message ?? 'unknown' })
+  return res.json({ ok: true })
+})
+
+router.post('/push-test', requireAuth, async (req: AuthRequest, res) => {
+  const delivery = await sendDeviceNotificationTest(req.userId!)
+  if (delivery.status !== 'sent') return res.status(409).json({ error: delivery.status })
   return res.json({ ok: true })
 })
 
