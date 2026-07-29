@@ -23,6 +23,28 @@ async function publicMembers(memberIds: string[]) {
   })
 }
 
+async function memberCardsInGroup(groupId: string, memberId: string) {
+  const events = await db.collection('events').where('groupId', '==', groupId).get()
+  const auctions = await Promise.all(events.docs.map((event) => db.collection('auctions').where('eventId', '==', event.id).get()))
+  return auctions.flatMap((snapshot) => snapshot.docs).filter((auction) => {
+    const data = auction.data()
+    return data.ownerId === memberId || (data.status === 'OPEN' && data.leaderId === memberId)
+  }).map((auction) => {
+    const card = auction.data()
+    return {
+      id: auction.id,
+      eventId: card.eventId ?? '',
+      eventTitle: events.docs.find((event) => event.id === card.eventId)?.data().title ?? 'Evento della crew',
+      title: card.title ?? 'Carta Drama',
+      description: card.description ?? '',
+      imageUrl: card.imageUrl ?? '',
+      rarity: card.rarity ?? 'COMMON',
+      credits: Number(card.currentBid ?? 0),
+      state: card.status === 'WON' ? 'Acquistata' : 'Offerta in testa'
+    }
+  })
+}
+
 router.post('/', requireAuth, async (req: AuthRequest, res) => {
   try {
     const data = createSchema.parse(req.body)
@@ -90,6 +112,15 @@ router.post('/:id/messages', requireAuth, async (req: AuthRequest, res) => {
     await ref.set(message)
     return res.status(201).json({ message: documentData(ref.id, message) })
   } catch (error: any) { return res.status(400).json({ error: error.message ?? 'message_failed' }) }
+})
+
+router.get('/:id/members/:memberId', requireAuth, async (req: AuthRequest, res) => {
+  const group = await db.collection('groups').doc(req.params.id).get()
+  const memberIds = (group.data()?.memberIds as string[] | undefined) ?? []
+  if (!group.exists || (!memberIds.includes(req.userId!) && !await isPlatformAdmin(req.userId!)) || !memberIds.includes(req.params.memberId)) return res.status(404).json({ error: 'not_found' })
+  const member = await db.collection('users').doc(req.params.memberId).get()
+  const user = member.data() ?? {}
+  return res.json({ member: { id: req.params.memberId, username: user.username ?? 'Giocatore', avatar: user.avatar ?? '', crewRole: user.crewRole ?? 'Jolly', bio: user.bio ?? '', city: user.city ?? '', motto: user.motto ?? '', cards: await memberCardsInGroup(group.id, req.params.memberId) } })
 })
 
 router.get('/:id', requireAuth, async (req: AuthRequest, res) => {
