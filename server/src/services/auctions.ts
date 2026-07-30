@@ -20,14 +20,29 @@ export async function ensureWallet(userId: string) {
 
 async function approvedCatalogCards() {
   const catalog = await db.collection('cardCatalog').get()
-  return catalog.docs.filter((card) => card.data().status !== 'REJECTED').map((card) => ({ key: `custom:${card.id}`, ...card.data() }))
+  // Event-only cards must never leak into the catalogue of another event.
+  return catalog.docs.filter((card) => card.data().status !== 'REJECTED' && !card.data().eventId).map((card) => ({ key: `custom:${card.id}`, ...card.data() }))
 }
 
-export async function createEventAuctions(eventId: string, event: Record<string, unknown>) {
+function auctionPayload(eventId: string, event: Record<string, unknown>, card: Record<string, any>) {
   const acquisitionMode = event.acquisitionMode === 'DIRECT' ? 'DIRECT' : 'AUCTION'
   const closesAt = acquisitionMode === 'AUCTION'
     ? new Date(new Date(String(event.startsAt)).getTime() - 60 * 60 * 1000).toISOString()
     : new Date(String(event.endsAt)).toISOString()
+  return {
+    eventId, groupId: event.groupId, cardKey: card.key, title: card.title, description: card.description, rarity: card.rarity ?? 'COMMON', type: card.type ?? 'YES_NO', imageUrl: card.imageUrl ?? '', creatorName: card.creatorName ?? null,
+    acquisitionMode, openingBid: OPENING_BID, directPrice: Math.max(OPENING_BID, Number(card.basePoints ?? OPENING_BID)), minIncrement: MIN_INCREMENT, currentBid: 0, leaderId: null, leaderName: null, status: acquisitionMode === 'DIRECT' ? 'AVAILABLE' : 'OPEN', opensAt: new Date().toISOString(), closesAt, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+  }
+}
+
+export async function createEventCardAuction(eventId: string, event: Record<string, unknown>, catalogId: string, card: Record<string, any>) {
+  const ref = db.collection('auctions').doc(`${eventId}_custom_${catalogId}`)
+  const payload = auctionPayload(eventId, event, { ...card, key: `custom:${catalogId}` })
+  await ref.set(payload, { merge: true })
+  return documentData(ref.id, payload)
+}
+
+export async function createEventAuctions(eventId: string, event: Record<string, unknown>) {
   const customCards = await approvedCatalogCards()
   const selectedKeys = new Set(Array.isArray(event.cardKeys) ? event.cardKeys.map(String) : [])
   const cards: any[] = [
@@ -39,10 +54,7 @@ export async function createEventAuctions(eventId: string, event: Record<string,
     const batch = db.batch()
     cards.splice(0, 400).forEach((card) => {
       const ref = db.collection('auctions').doc(`${eventId}_${String(card.key).replace(/[^a-zA-Z0-9_-]/g, '_')}`)
-      batch.set(ref, {
-        eventId, groupId: event.groupId, cardKey: card.key, title: card.title, description: card.description, rarity: card.rarity ?? 'COMMON', type: card.type ?? 'YES_NO', imageUrl: card.imageUrl ?? '', creatorName: card.creatorName ?? null,
-        acquisitionMode, openingBid: OPENING_BID, directPrice: Math.max(OPENING_BID, Number(card.basePoints ?? OPENING_BID)), minIncrement: MIN_INCREMENT, currentBid: 0, leaderId: null, leaderName: null, status: acquisitionMode === 'DIRECT' ? 'AVAILABLE' : 'OPEN', opensAt: new Date().toISOString(), closesAt, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
-      }, { merge: true })
+      batch.set(ref, auctionPayload(eventId, event, card), { merge: true })
     })
     await batch.commit()
   }

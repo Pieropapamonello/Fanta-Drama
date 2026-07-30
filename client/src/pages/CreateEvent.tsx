@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
 import { Gavel, ShoppingBag } from 'lucide-react'
 import api from '../services/api'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import ImageForge from '../components/ImageForge'
 
 const schema = z.object({ title: z.string().min(1), description: z.string().optional(), startsAt: z.string().min(1), endsAt: z.string().min(1), groupId: z.string().min(1), acquisitionMode: z.enum(['AUCTION', 'DIRECT']), imageUrl: z.string().optional() })
@@ -13,7 +13,7 @@ const keyFor = (card: any) => card.catalogCardId ? `custom:${card.catalogCardId}
 
 export default function CreateEvent() {
   const { register, handleSubmit, setValue, watch } = useForm<EventForm>({ resolver: zodResolver(schema), defaultValues: { acquisitionMode: 'AUCTION' } })
-  const navigate = useNavigate()
+  const navigate = useNavigate(); const [search] = useSearchParams(); const requestedGroupId = search.get('groupId') || ''
   const [groups, setGroups] = useState<any[]>([])
   const [cards, setCards] = useState<any[]>([])
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -25,9 +25,10 @@ export default function CreateEvent() {
   useEffect(() => {
     Promise.all([api.get('/groups'), api.get('/cards/library')]).then(([groupData, cardData]) => {
       setGroups((groupData.data.groups || []).filter((group: any) => group.currentUserRole === 'ADMIN'))
+      if (requestedGroupId) setValue('groupId', requestedGroupId)
       const library = cardData.data.cards || []; setCards(library); setSelected(new Set(library.map(keyFor)))
     }).catch(() => setError('Non riesco a caricare gruppi e carte.')).finally(() => setLoadingOptions(false))
-  }, [])
+  }, [requestedGroupId, setValue])
 
   const common = useMemo(() => cards.filter((card) => !card.catalogCardId), [cards])
   const community = useMemo(() => cards.filter((card) => card.catalogCardId), [cards])

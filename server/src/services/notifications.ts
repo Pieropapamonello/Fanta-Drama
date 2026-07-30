@@ -16,7 +16,7 @@ export type NotificationPayload = {
   message: string
   path?: string
   actionLabel?: string
-  kind: 'EVENT_CREATED' | 'EVENT_CLOSED' | 'SCORE_UPDATED' | 'AUCTION_OPENED' | 'AUCTION_OUTBID' | 'AUCTION_WON' | 'AUCTION_REMINDER' | 'CLAIM_NEEDS_VOTES' | 'CLAIM_CONFIRMED' | 'CLAIM_DENIED' | 'APPEAL_OPENED' | 'APPEAL_DECIDED'
+  kind: 'EVENT_CREATED' | 'EVENT_CLOSED' | 'EVENT_JOINED' | 'EVENT_CARD_CREATED' | 'SCORE_UPDATED' | 'AUCTION_OPENED' | 'AUCTION_OUTBID' | 'AUCTION_WON' | 'AUCTION_REMINDER' | 'CLAIM_NEEDS_VOTES' | 'CLAIM_CONFIRMED' | 'CLAIM_DENIED' | 'APPEAL_OPENED' | 'APPEAL_DECIDED'
 }
 
 export async function sendTelegramMessage(chatId: string | number, text: string, path = '/telegram-miniapp', extraButtons?: Array<Array<Record<string, string>>>, actionLabel = 'Apri FantaDrama') {
@@ -108,4 +108,10 @@ export async function notifyGroupMembers(groupId: string, payload: NotificationP
   const group = await db.collection('groups').doc(groupId).get()
   const memberIds = (group.data()?.memberIds as string[] | undefined) ?? []
   await Promise.allSettled(memberIds.filter((userId) => !excludedUserIds.includes(userId)).map((userId) => notifyUser(userId, payload)))
+}
+
+export async function notifyEventParticipants(eventId: string, payload: NotificationPayload, excludedUserIds: string[] = []) {
+  const event = await db.collection('events').doc(eventId).get()
+  const ids = (event.data()?.participantIds as string[] | undefined) ?? []
+  await Promise.allSettled(ids.filter(id => !excludedUserIds.includes(id)).map(id => notifyUser(id, payload)))
 }

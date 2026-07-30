@@ -11,6 +11,7 @@ import { starterCards } from '../data/starter-content'
 
 const router = Router()
 const createSchema = z.object({ name: z.string().trim().min(1).max(80), description: z.string().trim().max(500).optional() })
+const updateSchema = z.object({ name: z.string().trim().min(1).max(80), description: z.string().trim().max(500).optional(), imageUrl: z.string().url().max(2048).optional() })
 const joinSchema = z.object({ code: z.string().trim().min(1).max(16) })
 const messageSchema = z.object({ message: z.string().trim().min(1).max(700) })
 const marketCardSchema = z.object({ cardKey: z.string().regex(/^(starter|custom):[a-zA-Z0-9_-]+$/) })
@@ -194,6 +195,18 @@ router.get('/:id', requireAuth, async (req: AuthRequest, res) => {
       currentUserRole: (group.memberRoles as Record<string, string> | undefined)?.[req.userId!] ?? (await isPlatformAdmin(req.userId!) ? 'ADMIN' : 'MEMBER')
     }
   })
+})
+
+router.put('/:id', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const ref = db.collection('groups').doc(req.params.id); const snapshot = await ref.get()
+    if (!snapshot.exists) return res.status(404).json({ error: 'not_found' })
+    if (snapshot.data()?.memberRoles?.[req.userId!] !== 'ADMIN' && !await isPlatformAdmin(req.userId!)) return res.status(403).json({ error: 'admin_required' })
+    const data = updateSchema.parse(req.body)
+    await ref.update({ ...data, description: data.description ?? '', updatedAt: new Date().toISOString() })
+    const group = await ref.get()
+    return res.json({ group: documentData(group.id, group.data() as Record<string, unknown>) })
+  } catch (error: any) { return res.status(400).json({ error: error.message ?? 'group_update_failed' }) }
 })
 
 router.delete('/:id', requireAuth, async (req: AuthRequest, res) => {

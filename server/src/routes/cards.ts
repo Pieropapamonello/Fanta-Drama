@@ -2,7 +2,10 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { requireAuth, AuthRequest } from '../middleware/auth'
 import { db, documentData } from '../services/firebase'
+import { groupRole } from '../services/firebase'
 import { starterCards } from '../data/starter-content'
+import { createEventCardAuction } from '../services/auctions'
+import { notifyGroupMembers } from '../services/notifications'
 
 const router = Router()
 const auctionOnly = (_req: AuthRequest, res: any) => res.status(410).json({ error: 'cards_are_available_only_through_event_auctions' })
@@ -10,7 +13,7 @@ const schema = z.object({
   title: z.string().trim().min(3).max(100), description: z.string().trim().min(12).max(500),
   rarity: z.enum(['COMMON', 'UNCOMMON', 'RARE', 'EPIC', 'LEGENDARY', 'MYTHIC']).optional(),
   type: z.enum(['YES_NO', 'PICK_CHARACTER', 'MULTI_CHOICE', 'NUMBER', 'RANGE', 'TIME', 'TEXT', 'FIRST_ACTION', 'ORDER']).optional(),
-  imageUrl: z.string().url().max(2048), imageStoragePath: z.string().max(1024).optional()
+  imageUrl: z.string().url().max(2048), imageStoragePath: z.string().max(1024).optional(), eventId: z.string().min(1).optional()
 })
 const interestSchema = z.object({ interested: z.boolean() })
 
@@ -45,13 +48,28 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
       db.collection('cardCatalog').where('normalizedDescription', '==', normalizedDescription).limit(1).get(),
       db.collection('cardCatalog').where('imageUrl', '==', data.imageUrl).limit(1).get()
     ])
-    if (!sameTitle.empty) return res.status(409).json({ error: 'card_title_already_exists' })
-    if (!sameDescription.empty) return res.status(409).json({ error: 'card_description_already_exists' })
-    if (!sameImage.empty) return res.status(409).json({ error: 'card_image_already_exists' })
+    // Uniqueness is global for community cards, and local to a single event for
+    // event-only cards. This lets two crews tell different stories safely.
+    if (!data.eventId && !sameTitle.empty) return res.status(409).json({ error: 'card_title_already_exists' })
+    if (!data.eventId && !sameDescription.empty) return res.status(409).json({ error: 'card_description_already_exists' })
+    if (!data.eventId && !sameImage.empty) return res.status(409).json({ error: 'card_image_already_exists' })
+    let event: any = null
+    if (data.eventId) {
+      const snapshot = await db.collection('events').doc(data.eventId).get()
+      if (!snapshot.exists || !await groupRole(String(snapshot.data()?.groupId), req.userId!)) return res.status(404).json({ error: 'event_not_found' })
+      const participantIds = (snapshot.data()?.participantIds as string[] | undefined) ?? []
+      if (!participantIds.includes(req.userId!) && snapshot.data()?.createdBy !== req.userId!) return res.status(403).json({ error: 'join_event_before_creating_card' })
+      if (new Date(String(snapshot.data()?.endsAt)).getTime() <= Date.now()) return res.status(409).json({ error: 'event_finished' })
+      event = snapshot
+    }
     const profile = await db.collection('users').doc(req.userId!).get()
     const ref = db.collection('cardCatalog').doc()
-    const card = { ...data, rarity: data.rarity ?? 'COMMON', type: data.type ?? 'YES_NO', status: 'APPROVED', creatorId: req.userId!, creatorName: profile.data()?.username ?? 'Giocatore', normalizedTitle, normalizedDescription, createdAt: new Date().toISOString(), autoApprovedAt: new Date().toISOString() }
+    const card = { ...data, rarity: data.rarity ?? 'COMMON', type: data.type ?? 'YES_NO', status: 'APPROVED', scope: data.eventId ? 'EVENT' : 'GLOBAL', creatorId: req.userId!, creatorName: profile.data()?.username ?? 'Giocatore', normalizedTitle, normalizedDescription, createdAt: new Date().toISOString(), autoApprovedAt: new Date().toISOString() }
     await ref.set(card)
+    if (event) {
+      await createEventCardAuction(event.id, event.data() as Record<string, unknown>, ref.id, card)
+      void notifyGroupMembers(String(event.data()?.groupId), { kind: 'EVENT_CARD_CREATED', title: `Nuova carta per ${event.data()?.title}`, message: `${card.creatorName} ha aggiunto “${card.title}”: apri l’evento per comprarla o rilanciare.`, path: `/events/${event.id}`, actionLabel: 'Apri mercato evento' }, [req.userId!])
+    }
     return res.status(201).json({ catalogCard: documentData(ref.id, card) })
   } catch (error: any) { return res.status(400).json({ error: error.message ?? 'invalid_card' }) }
 })

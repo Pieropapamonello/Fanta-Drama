@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { requireAuth, AuthRequest } from '../middleware/auth'
 import { db, documentData, groupRole } from '../services/firebase'
-import { notifyGroupMembers, notifyUser } from '../services/notifications'
+import { notifyEventParticipants, notifyGroupMembers, notifyUser } from '../services/notifications'
 
 const router = Router()
 const claimSchema = z.object({ auctionId: z.string().min(1), note: z.string().trim().max(500).optional() })
@@ -12,6 +12,7 @@ const appealSchema = z.object({ message: z.string().trim().min(4).max(1000) })
 async function eventAccess(eventId: string, userId: string) {
   const event = await db.collection('events').doc(eventId).get()
   if (!event.exists || !await groupRole(String(event.data()?.groupId), userId)) return null
+  if (!((event.data()?.participantIds as string[] | undefined) ?? []).includes(userId)) return null
   return event
 }
 
@@ -28,6 +29,10 @@ export async function rewardClaim(claimRef: FirebaseFirestore.DocumentReference,
     transaction.update(claimRef, { rewardedAt: now, rewardCredits: reward, updatedAt: now })
     transaction.set(db.collection('creditTransactions').doc(), { userId: claim.userId, amount: reward, kind: 'CLAIM_CONFIRMED', claimId: claimRef.id, eventId: claim.eventId, createdAt: now })
   })
+  // Keep the event leaderboard live instead of waiting for the automatic close.
+  const confirmed = await db.collection('cardClaims').where('eventId', '==', String(claim.eventId)).get()
+  const points = confirmed.docs.filter(item => item.data().userId === claim.userId && item.data().status === 'CONFIRMED').reduce((total, item) => total + Number(item.data().rewardCredits ?? 0), 0)
+  await db.collection('scores').doc(`${claim.userId}_${claim.eventId}`).set({ userId: claim.userId, eventId: claim.eventId, groupId: claim.groupId, points, updatedAt: new Date().toISOString() }, { merge: true })
   void notifyUser(String(claim.userId), { kind: 'CLAIM_CONFIRMED', title: 'Carta confermata', message: `La crew ha confermato il tuo evento: hai ricevuto ${reward} crediti.`, path: `/events/${claim.eventId}` })
 }
 
