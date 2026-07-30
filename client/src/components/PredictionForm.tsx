@@ -26,9 +26,16 @@ export default function PredictionForm({ eventId, phase, acquisitionMode = 'AUCT
     if (loadingRef.current) return
     loadingRef.current = true
     try {
-      const [cardData, claimData] = await Promise.all([api.get(`/auctions/event/${eventId}`), api.get(`/claims/event/${eventId}`)])
-      setCards(cardData.data.auctions || []); setWallet(cardData.data.wallet); setCurrentUserId(cardData.data.currentUserId || ''); setClaims(claimData.data.claims || [])
-    } catch { setMessage('Non riesco a caricare le carte in questo momento.') }
+      // The market must remain usable even if the optional claim board is
+      // temporarily unavailable.
+      const cardData = await api.get(`/auctions/event/${eventId}`)
+      setCards(cardData.data.auctions || []); setWallet(cardData.data.wallet); setCurrentUserId(cardData.data.currentUserId || '')
+    } catch (error: any) {
+      const code = error.response?.data?.error
+      setMessage(code === 'join_event_first' ? 'Entra nell’evento prima di aprire il mercato.' : code === 'event_not_found' ? 'Non posso aprire il mercato di questo evento.' : `Non riesco a caricare le carte${code ? ` (${code})` : ''}.`)
+    }
+    try { const claimData = await api.get(`/claims/event/${eventId}`); setClaims(claimData.data.claims || []) }
+    catch { /* Claims never hide a working market. */ }
     finally { loadingRef.current = false }
   }
   useEffect(() => { void load(); const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void load() }, 30_000); return () => window.clearInterval(timer) }, [eventId])
