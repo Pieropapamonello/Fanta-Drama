@@ -10,10 +10,17 @@ export type StoredAsset = { imageUrl: string; storagePath?: string }
 let cachedDropboxAccessToken: { value: string; expiresAt: number } | null = null
 
 function imagePrompt(kind: AssetKind, description: string) {
+  // Keep prompts brand-neutral and make the inexpensive Cloudflare model much
+  // less likely to turn a normal person into an animal or a distorted figure.
+  const safeDescription = description.replace(/\bnutella\b/gi, 'generic hazelnut chocolate spread with no packaging or label')
+  const asksForPeople = /\b(bambin\w*|ragazz\w*|persona\w*|uomo|donna|amici|ragazzo|ragazza|people|person|child|girl|boy)\b/i.test(safeDescription)
+  const humanGuard = asksForPeople
+    ? 'Depict only ordinary fictional humans with natural human anatomy, natural skin tones, two eyes, two arms and two hands. No mutants, aliens, animals, insects, masks, exaggerated cartoon faces, distorted limbs, horror, or unsettling imagery.'
+    : 'No people, animals, monsters, reptiles, insects, masks, horror, or unsettling imagery.'
   const style = 'Original FantaDrama social-game universe; refined glossy 3D editorial illustration; cinematic violet, indigo, cyan and hot-pink lighting; family-friendly social party mood; no text, no letters, no logos, no watermark, no celebrity, no recognizable real person, no copyrighted characters.'
-  if (kind === 'CARD') return `Collectible game card artwork, vertical composition. Represent this request literally as a clear object or a cheerful party-table scene: ${description}. Keep the subject central and immediately understandable. Do not invent monsters, reptiles, animals, skeletons, horror, violence, masks, or strange characters. Prefer elegant objects, decorations, food, table settings, lights, confetti, cards, or an empty place setting when appropriate. No people unless the description explicitly asks for them. No readable writing anywhere. ${style}`
-  if (kind === 'EVENT') return `Premium social event key art, cinematic landscape composition with clear central subject. Subject: ${description}. ${style}`
-  return `Square character avatar, head-and-shoulders of an original fictional adult. Description: ${description}. Friendly expressive face, centered for circular crop. ${style}`
+  if (kind === 'CARD') return `Collectible game card artwork, vertical composition. Represent this request literally as a clear object or a cheerful party-table scene: ${safeDescription}. Keep the subject central and immediately understandable. Prefer elegant objects, decorations, food, table settings, lights, confetti, cards, or an empty place setting when appropriate. ${humanGuard} No readable writing anywhere. ${style}`
+  if (kind === 'EVENT') return `Premium social event key art, cinematic landscape composition with a clear central subject. Subject: ${safeDescription}. ${humanGuard} ${style}`
+  return `Square character avatar, head-and-shoulders of an original fictional adult. Description: ${safeDescription}. Friendly expressive face, centered for circular crop. No distorted anatomy, no animals, no masks, no horror. ${style}`
 }
 
 function extensionFor(contentType: string) {
@@ -243,8 +250,9 @@ async function generateWithCloudflare(kind: AssetKind, prompt: string): Promise<
       negative_prompt: 'text, letters, logo, watermark, celebrity, recognizable real person, copyrighted character, blurry, low quality',
       width: eventImage ? 1024 : 768,
       height: eventImage ? 576 : 1024,
-      num_steps: 12,
-      guidance: 7.5
+      num_steps: 20,
+      guidance: 7.5,
+      seed: Math.floor(Math.random() * 2_147_483_647)
     })
   })
   if (!response.ok) {
