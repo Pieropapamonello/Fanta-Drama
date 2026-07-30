@@ -14,7 +14,10 @@ export default function CreateCard() {
   const dedicated = Boolean(eventId)
   const onSubmit = async (data: any) => {
     try { await api.post('/cards', { ...data, ...(eventId ? { eventId } : {}) }); navigate(eventId ? `/events/${eventId}` : '/cards') }
-    catch (err: any) { setError(err.response?.data?.error || 'Errore nella creazione della carta.') }
+    catch (err: any) {
+      const code = err.response?.data?.error
+      setError(code === 'event_not_found' ? 'Questo evento non esiste più oppure è stato eliminato. Torna alla lista eventi e riaprilo.' : code === 'event_access_denied' ? 'Non fai parte del gruppo di questo evento.' : code === 'join_event_before_creating_card' ? 'Aderisci prima all’evento, poi potrai creare una carta dedicata.' : code || 'Errore nella creazione della carta.')
+    }
   }
   return <form onSubmit={handleSubmit(onSubmit)} className="max-w-md">
     <p className="eyebrow">{dedicated ? 'Mazzo dell’evento' : 'Collezione condivisa'}</p><h2 className="text-2xl mb-4">{dedicated ? 'Crea una carta dedicata' : 'Crea una carta unica'}</h2>

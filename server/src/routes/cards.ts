@@ -59,9 +59,12 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
     let event: any = null
     if (data.eventId) {
       const snapshot = await db.collection('events').doc(data.eventId).get()
-      if (!snapshot.exists || !await groupRole(String(snapshot.data()?.groupId), req.userId!)) return res.status(404).json({ error: 'event_not_found' })
+      if (!snapshot.exists) return res.status(404).json({ error: 'event_not_found' })
+      const platformAdmin = await isPlatformAdmin(req.userId!)
+      const role = await groupRole(String(snapshot.data()?.groupId), req.userId!)
+      if (!role && !platformAdmin) return res.status(403).json({ error: 'event_access_denied' })
       const participantIds = (snapshot.data()?.participantIds as string[] | undefined) ?? []
-      if (!participantIds.includes(req.userId!) && snapshot.data()?.createdBy !== req.userId!) return res.status(403).json({ error: 'join_event_before_creating_card' })
+      if (!participantIds.includes(req.userId!) && snapshot.data()?.createdBy !== req.userId! && !platformAdmin) return res.status(403).json({ error: 'join_event_before_creating_card' })
       if (new Date(String(snapshot.data()?.endsAt)).getTime() <= Date.now()) return res.status(409).json({ error: 'event_finished' })
       event = snapshot
     }
