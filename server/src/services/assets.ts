@@ -10,8 +10,8 @@ export type StoredAsset = { imageUrl: string; storagePath?: string }
 let cachedDropboxAccessToken: { value: string; expiresAt: number } | null = null
 
 function imagePrompt(kind: AssetKind, description: string) {
-  // Keep prompts brand-neutral and make the inexpensive Cloudflare model much
-  // less likely to turn a normal person into an animal or a distorted figure.
+  // Keep prompts brand-neutral and make the Cloudflare model much less likely
+  // to turn a normal person into an animal or a distorted figure.
   const safeDescription = description.replace(/\bnutella\b/gi, 'generic hazelnut chocolate spread with no packaging or label')
   // DreamShaper is trained primarily on English. Translating the common
   // FantaDrama scene words avoids it treating Italian person descriptions as
@@ -27,10 +27,12 @@ function imagePrompt(kind: AssetKind, description: string) {
     .replace(/campagna/gi, 'countryside')
   const asksForPeople = /\b(bambin\w*|ragazz\w*|persona\w*|uomo|donna|amici|ragazzo|ragazza|people|person|child|girl|boy)\b/i.test(`${safeDescription} ${modelDescription}`)
   const humanGuard = asksForPeople
-    ? 'Depict only ordinary fictional humans with natural human anatomy, natural skin tones, two eyes, two arms and two hands. No mutants, aliens, animals, insects, masks, exaggerated cartoon faces, distorted limbs, horror, or unsettling imagery.'
+    ? 'Depict only ordinary fictional humans with natural human anatomy, natural skin tones, two eyes, two arms and two hands. Faces must be friendly, clearly lit and naturally proportioned. No mutants, aliens, animals, insects, masks, exaggerated cartoon faces, distorted limbs, horror, unsettling imagery, sinister smiles, or dark shadows on faces.'
     : 'No people, animals, monsters, reptiles, insects, masks, horror, or unsettling imagery.'
-  const style = 'Original FantaDrama social-game universe; refined glossy 3D editorial illustration; cinematic violet, indigo, cyan and hot-pink lighting; family-friendly social party mood; no text, no letters, no logos, no watermark, no celebrity, no recognizable real person, no copyrighted characters.'
-  const peopleStyle = asksForPeople ? 'Warm, cheerful, age-appropriate premium storybook illustration, bright natural expressions, wholesome and non-scary.' : ''
+  const style = asksForPeople
+    ? 'Original FantaDrama social-game universe; polished premium storybook illustration; bright daytime or warmly lit party setting, soft natural colours, cheerful wholesome mood. No text, no letters, no logos, no watermark, no celebrity, no recognizable real person, no copyrighted characters.'
+    : 'Original FantaDrama social-game universe; refined glossy 3D editorial illustration; cinematic violet, indigo, cyan and hot-pink lighting; family-friendly social party mood; no text, no letters, no logos, no watermark, no celebrity, no recognizable real person, no copyrighted characters.'
+  const peopleStyle = asksForPeople ? 'Warm, cheerful, age-appropriate premium storybook illustration, smiling natural expressions, soft daylight, wholesome and non-scary.' : ''
   if (kind === 'CARD') return `Collectible game card artwork, vertical composition. Represent this request literally as a clear object or a cheerful party-table scene: ${modelDescription}. Keep the subject central and immediately understandable. Prefer elegant objects, decorations, food, table settings, lights, confetti, cards, or an empty place setting when appropriate. ${peopleStyle} ${humanGuard} No readable writing anywhere. ${style}`
   if (kind === 'EVENT') return `Premium social event key art, cinematic landscape composition with a clear central subject. Subject: ${modelDescription}. ${peopleStyle} ${humanGuard} ${style}`
   return `Square character avatar, head-and-shoulders of an original fictional adult. Description: ${safeDescription}. Friendly expressive face, centered for circular crop. No distorted anatomy, no animals, no masks, no horror. ${style}`
@@ -246,12 +248,14 @@ async function generateWithCloudflare(kind: AssetKind, prompt: string): Promise<
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID
   const apiToken = process.env.CLOUDFLARE_AI_TOKEN
   if (!accountId || !apiToken) throw new Error('cloudflare_image_generation_not_configured')
-  // SDXL was retired from the current Workers AI catalogue.  Transparently
-  // migrate an old Render value as well as the default so old deployments do
-  // not keep returning a cryptic HTTP 400.
+  // SDXL Lightning is Cloudflare-hosted and is a far better fit for the
+  // friendly FantaDrama artwork than the old DreamShaper fallback. Migrate
+  // the former defaults transparently so existing Render configurations get
+  // the improvement without an environment-variable change.
   const configuredModel = process.env.CLOUDFLARE_IMAGE_MODEL?.trim()
-  const model = !configuredModel || configuredModel === '@cf/stabilityai/stable-diffusion-xl-base-1.0'
-    ? '@cf/lykon/dreamshaper-8-lcm'
+  const legacyDefaultModels = new Set(['@cf/stabilityai/stable-diffusion-xl-base-1.0', '@cf/lykon/dreamshaper-8-lcm'])
+  const model = !configuredModel || legacyDefaultModels.has(configuredModel)
+    ? '@cf/bytedance/stable-diffusion-xl-lightning'
     : configuredModel
   const eventImage = kind === 'EVENT'
   const flux = model.includes('flux-')
@@ -260,7 +264,7 @@ async function generateWithCloudflare(kind: AssetKind, prompt: string): Promise<
     headers: { Authorization: `Bearer ${apiToken}`, 'content-type': 'application/json' },
     body: JSON.stringify(flux ? { prompt, steps: 4, seed: Math.floor(Math.random() * 2_147_483_647) } : {
       prompt,
-      negative_prompt: 'text, letters, logo, watermark, celebrity, recognizable real person, copyrighted character, blurry, low quality',
+      negative_prompt: 'text, letters, logo, watermark, celebrity, recognizable real person, copyrighted character, blurry, low quality, dark face, shadow covering face, horror, creepy, sinister, grotesque, deformed, monster, alien, animal face, extra fingers, distorted anatomy',
       width: eventImage ? 1024 : 768,
       height: eventImage ? 576 : 1024,
       num_steps: 20,
