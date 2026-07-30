@@ -10,8 +10,17 @@ const bidSchema = z.object({ amount: z.number().int().positive().max(1_000_000) 
 router.get('/event/:eventId', requireAuth, async (req: AuthRequest, res) => {
   const event = await db.collection('events').doc(req.params.eventId).get()
   if (!event.exists || !await groupRole(String(event.data()?.groupId), req.userId!)) return res.status(404).json({ error: 'event_not_found' })
-  const existing = await db.collection('auctions').where('eventId', '==', event.id).limit(1).get()
-  if (existing.empty && new Date(String(event.data()?.startsAt)).getTime() - 60 * 60 * 1000 > Date.now()) await createEventAuctions(event.id, event.data() as Record<string, unknown>)
+  const existing = await db.collection('auctions').where('eventId', '==', event.id).get()
+  const canCreate = event.data()?.acquisitionMode === 'DIRECT' ? new Date(String(event.data()?.endsAt)).getTime() > Date.now() : new Date(String(event.data()?.startsAt)).getTime() - 60 * 60 * 1000 > Date.now()
+  if (existing.empty && canCreate) await createEventAuctions(event.id, event.data() as Record<string, unknown>)
+  if (event.data()?.acquisitionMode === 'DIRECT' && !existing.empty) {
+    const batch = db.batch(); let changed = false
+    existing.docs.forEach((card) => {
+      const data = card.data(); const status = ['OPEN', 'UNSOLD'].includes(String(data.status)) && !data.ownerId ? 'AVAILABLE' : data.status
+      if (data.acquisitionMode !== 'DIRECT' || status !== data.status || data.closesAt !== event.data()?.endsAt) { batch.set(card.ref, { acquisitionMode: 'DIRECT', status, directPrice: Number(data.directPrice ?? data.openingBid ?? 20), closesAt: event.data()?.endsAt, updatedAt: new Date().toISOString() }, { merge: true }); changed = true }
+    })
+    if (changed) await batch.commit()
+  }
   void sendAuctionReminder(event.id)
   return res.json(await auctionsForEvent(event.id, req.userId!))
 })

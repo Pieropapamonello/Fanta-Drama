@@ -25,7 +25,9 @@ async function approvedCatalogCards() {
 
 export async function createEventAuctions(eventId: string, event: Record<string, unknown>) {
   const acquisitionMode = event.acquisitionMode === 'DIRECT' ? 'DIRECT' : 'AUCTION'
-  const closesAt = new Date(new Date(String(event.startsAt)).getTime() - (acquisitionMode === 'AUCTION' ? 60 * 60 * 1000 : 0)).toISOString()
+  const closesAt = acquisitionMode === 'AUCTION'
+    ? new Date(new Date(String(event.startsAt)).getTime() - 60 * 60 * 1000).toISOString()
+    : new Date(String(event.endsAt)).toISOString()
   const customCards = await approvedCatalogCards()
   const selectedKeys = new Set(Array.isArray(event.cardKeys) ? event.cardKeys.map(String) : [])
   const cards: any[] = [
