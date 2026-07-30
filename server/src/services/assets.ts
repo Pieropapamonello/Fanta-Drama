@@ -13,13 +13,25 @@ function imagePrompt(kind: AssetKind, description: string) {
   // Keep prompts brand-neutral and make the inexpensive Cloudflare model much
   // less likely to turn a normal person into an animal or a distorted figure.
   const safeDescription = description.replace(/\bnutella\b/gi, 'generic hazelnut chocolate spread with no packaging or label')
-  const asksForPeople = /\b(bambin\w*|ragazz\w*|persona\w*|uomo|donna|amici|ragazzo|ragazza|people|person|child|girl|boy)\b/i.test(safeDescription)
+  // DreamShaper is trained primarily on English. Translating the common
+  // FantaDrama scene words avoids it treating Italian person descriptions as
+  // visual noise, which was producing grotesque figures.
+  const modelDescription = safeDescription
+    .replace(/una bambina/gi, 'a cheerful young girl')
+    .replace(/un bambino/gi, 'a cheerful young boy')
+    .replace(/ragazzi e ragazze/gi, 'a happy group of friends')
+    .replace(/ragazze e ragazzi/gi, 'a happy group of friends')
+    .replace(/torna dalla campagna/gi, 'returning from the countryside')
+    .replace(/mangia il panino/gi, 'eating a simple sandwich')
+    .replace(/mangia un panino/gi, 'eating a simple sandwich')
+    .replace(/campagna/gi, 'countryside')
   const humanGuard = asksForPeople
     ? 'Depict only ordinary fictional humans with natural human anatomy, natural skin tones, two eyes, two arms and two hands. No mutants, aliens, animals, insects, masks, exaggerated cartoon faces, distorted limbs, horror, or unsettling imagery.'
     : 'No people, animals, monsters, reptiles, insects, masks, horror, or unsettling imagery.'
   const style = 'Original FantaDrama social-game universe; refined glossy 3D editorial illustration; cinematic violet, indigo, cyan and hot-pink lighting; family-friendly social party mood; no text, no letters, no logos, no watermark, no celebrity, no recognizable real person, no copyrighted characters.'
-  if (kind === 'CARD') return `Collectible game card artwork, vertical composition. Represent this request literally as a clear object or a cheerful party-table scene: ${safeDescription}. Keep the subject central and immediately understandable. Prefer elegant objects, decorations, food, table settings, lights, confetti, cards, or an empty place setting when appropriate. ${humanGuard} No readable writing anywhere. ${style}`
-  if (kind === 'EVENT') return `Premium social event key art, cinematic landscape composition with a clear central subject. Subject: ${safeDescription}. ${humanGuard} ${style}`
+  const peopleStyle = asksForPeople ? 'Warm, cheerful, age-appropriate premium storybook illustration, bright natural expressions, wholesome and non-scary.' : ''
+  if (kind === 'CARD') return `Collectible game card artwork, vertical composition. Represent this request literally as a clear object or a cheerful party-table scene: ${modelDescription}. Keep the subject central and immediately understandable. Prefer elegant objects, decorations, food, table settings, lights, confetti, cards, or an empty place setting when appropriate. ${peopleStyle} ${humanGuard} No readable writing anywhere. ${style}`
+  if (kind === 'EVENT') return `Premium social event key art, cinematic landscape composition with a clear central subject. Subject: ${modelDescription}. ${peopleStyle} ${humanGuard} ${style}`
   return `Square character avatar, head-and-shoulders of an original fictional adult. Description: ${safeDescription}. Friendly expressive face, centered for circular crop. No distorted anatomy, no animals, no masks, no horror. ${style}`
 }
 
