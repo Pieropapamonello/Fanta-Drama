@@ -11,7 +11,7 @@ export default function EventDetail() {
   const [now, setNow] = useState(Date.now())
   const [selectedParticipant, setSelectedParticipant] = useState<any>(null)
   const load = useCallback(async () => { if (!id) return; try { const response = await api.get(`/events/${id}`); setEvent(response.data.event) } catch { setEvent(null) } }, [id])
-  useEffect(() => { void load(); const refresh = window.setInterval(() => void load(), 30_000); const clock = window.setInterval(() => setNow(Date.now()), 30_000); return () => { window.clearInterval(refresh); window.clearInterval(clock) } }, [load])
+  useEffect(() => { void load(); const refresh = window.setInterval(() => { if (document.visibilityState === 'visible') void load() }, 30_000); const clock = window.setInterval(() => setNow(Date.now()), 30_000); return () => { window.clearInterval(refresh); window.clearInterval(clock) } }, [load])
   if (!event) return <div className="empty-state">Sto caricando la drama room…</div>
   const mode = event.acquisitionMode === 'DIRECT' ? 'DIRECT' : 'AUCTION'
   const marketCloses = mode === 'AUCTION' ? new Date(new Date(event.startsAt).getTime() - 60 * 60 * 1000).toISOString() : event.endsAt

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { CalendarDays, CreditCard, PlusCircle, Send, ShoppingBag, Users } from 'lucide-react'
 import api from '../services/api'
@@ -21,9 +21,11 @@ export default function GroupDetail() {
   const [notice, setNotice] = useState('')
   const [selectedMember, setSelectedMember] = useState<any>(null)
   const [memberLoading, setMemberLoading] = useState(false)
+  const loadingRef = useRef(false)
 
   const load = useCallback(async () => {
-    if (!groupId) return
+    if (!groupId || loadingRef.current) return
+    loadingRef.current = true
     try {
       const [groupData, eventData, chatData] = await Promise.all([
         api.get(`/groups/${groupId}`), api.get(`/events?groupId=${groupId}`), api.get(`/groups/${groupId}/messages`)
@@ -32,11 +34,12 @@ export default function GroupDetail() {
       setEvents(eventData.data.events || [])
       setMessages(chatData.data.messages || [])
     } catch { setNotice('Non riesco ad aprire questa stanza privata.') }
+    finally { loadingRef.current = false }
   }, [groupId])
 
   useEffect(() => {
     void load()
-    const timer = window.setInterval(() => void load(), 10_000)
+    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void load() }, 10_000)
     return () => window.clearInterval(timer)
   }, [load])
 
@@ -76,7 +79,7 @@ export default function GroupDetail() {
           <div className="group-action-links">
             <Link to="/cards/create" className="btn btn-ghost"><PlusCircle size={15} /> Crea carta</Link>
             <Link to={`/groups/${group.id}/cards`} className="btn btn-ghost"><CreditCard size={15} /> Carte</Link>
-            <Link to="/events/create" className="btn">+ Evento</Link>
+            {group.currentUserRole === 'ADMIN' && <Link to="/events/create" className="btn">+ Evento</Link>}
           </div>
         </div>
         <p className="group-auction-note">Le aste si aprono automaticamente per tutte le carte quando viene creato un evento. Da un evento puoi comprare o rilanciare con i tuoi crediti.</p>

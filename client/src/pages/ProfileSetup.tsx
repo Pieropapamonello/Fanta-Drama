@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
-import { BellRing, Check, MapPin, Sparkles } from 'lucide-react'
+import { BellRing, Check, HelpCircle, MapPin, Sparkles } from 'lucide-react'
 import api from '../services/api'
 import { useNavigate } from 'react-router-dom'
 import { EmailAuthProvider, linkWithCredential } from 'firebase/auth'
@@ -117,6 +117,7 @@ export default function ProfileSetup() {
     setIsSaving(true); setError('')
     try {
       await api.put('/profile/me', data)
+      if (!profile?.profileCompleted) window.dispatchEvent(new Event('fd:profile-completed'))
       navigate('/dashboard', { replace: true })
     } catch (err: any) {
       setError(err.response?.data?.error === 'username_taken' ? 'Questo nickname è già usato: scegline un altro.' : 'Non riesco a salvare il profilo. Riprova.')
@@ -145,6 +146,7 @@ export default function ProfileSetup() {
 
   if (isLoading) return <div className="empty-state">Sto preparando il tuo profilo…</div>
   return <form className="profile-setup" onSubmit={handleSubmit(onSubmit)}>
+    <section className="tutorial-replay-card"><div><HelpCircle /><span><strong>Come si gioca?</strong><small>Rivedi la guida visuale a crew, eventi, carte e notifiche.</small></span></div><button type="button" className="btn btn-ghost" onClick={() => window.dispatchEvent(new Event('fd:open-tutorial'))}>Apri tutorial</button></section>
     <div className="profile-setup-copy"><p className="eyebrow">Il tuo alter ego</p><h2>Crea il tuo personaggio</h2><p>Queste informazioni saranno visibili solo nella tua esperienza FantaDrama. Puoi modificarle quando vuoi.</p></div>
     <section><div className="profile-section-title"><Sparkles size={17} /><div><strong>Scegli il tuo avatar</strong><span>Il tuo mood nella drama room</span></div></div><div className="avatar-picker">
       {[...avatars, ...extraAvatars].map((item: any) => <button type="button" key={item.slug || item.value} className={`avatar-choice ${avatar === item.value ? 'is-selected' : ''}`} onClick={() => void chooseAvatar(item)} disabled={Boolean(generatingAvatar)}>

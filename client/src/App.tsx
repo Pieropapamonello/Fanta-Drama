@@ -3,32 +3,34 @@ import { Routes, Route, Link, NavLink, useNavigate } from 'react-router-dom'
 import { onAuthStateChanged, signOut } from 'firebase/auth'
 import { CalendarDays, Home, Layers, LogOut, User, Users, X } from 'lucide-react'
 import { firebaseAuth } from './services/firebase'
-import Landing from './pages/Landing'
-import Login from './pages/Login'
-import Register from './pages/Register'
-import Dashboard from './pages/Dashboard'
-import GroupsList from './pages/GroupsList'
-import GroupDetail from './pages/GroupDetail'
-import GroupAuctions from './pages/GroupAuctions'
-import CreateGroup from './pages/CreateGroup'
-import JoinGroup from './pages/JoinGroup'
-import CharactersList from './pages/CharactersList'
-import CreateCharacter from './pages/CreateCharacter'
-import CardsList from './pages/CardsList'
-import CreateCard from './pages/CreateCard'
-import EventsList from './pages/EventsList'
-import CreateEvent from './pages/CreateEvent'
-import EventDetail from './pages/EventDetail'
 import ProtectedRoute from './components/ProtectedRoute'
-import TelegramLogin from './pages/TelegramLogin'
-import TelegramMiniApp from './pages/TelegramMiniApp'
-import ProfileSetup from './pages/ProfileSetup'
-import AdminConsole from './pages/AdminConsole'
-import AdminLogin from './pages/AdminLogin'
-import Notifications from './pages/Notifications'
 import PwaInstallPrompt from './components/PwaInstallPrompt'
 import BrandMark from './components/BrandMark'
 import { listenToForegroundPush } from './services/push'
+import OnboardingTutorial from './components/OnboardingTutorial'
+
+const Landing = React.lazy(() => import('./pages/Landing'))
+const Login = React.lazy(() => import('./pages/Login'))
+const Register = React.lazy(() => import('./pages/Register'))
+const Dashboard = React.lazy(() => import('./pages/Dashboard'))
+const GroupsList = React.lazy(() => import('./pages/GroupsList'))
+const GroupDetail = React.lazy(() => import('./pages/GroupDetail'))
+const GroupAuctions = React.lazy(() => import('./pages/GroupAuctions'))
+const CreateGroup = React.lazy(() => import('./pages/CreateGroup'))
+const JoinGroup = React.lazy(() => import('./pages/JoinGroup'))
+const CharactersList = React.lazy(() => import('./pages/CharactersList'))
+const CreateCharacter = React.lazy(() => import('./pages/CreateCharacter'))
+const CardsList = React.lazy(() => import('./pages/CardsList'))
+const CreateCard = React.lazy(() => import('./pages/CreateCard'))
+const EventsList = React.lazy(() => import('./pages/EventsList'))
+const CreateEvent = React.lazy(() => import('./pages/CreateEvent'))
+const EventDetail = React.lazy(() => import('./pages/EventDetail'))
+const TelegramLogin = React.lazy(() => import('./pages/TelegramLogin'))
+const TelegramMiniApp = React.lazy(() => import('./pages/TelegramMiniApp'))
+const ProfileSetup = React.lazy(() => import('./pages/ProfileSetup'))
+const AdminConsole = React.lazy(() => import('./pages/AdminConsole'))
+const AdminLogin = React.lazy(() => import('./pages/AdminLogin'))
+const Notifications = React.lazy(() => import('./pages/Notifications'))
 
 function useLoggedIn() {
   const [loggedIn, setLoggedIn] = useState(Boolean(localStorage.getItem('fd_token')))
@@ -67,6 +69,7 @@ function MobileNav() {
 }
 
 export default function App() {
+  const loggedIn = useLoggedIn()
   React.useEffect(() => {
     let unsubscribe: (() => void) | undefined
     void listenToForegroundPush().then((stop) => { unsubscribe = stop })
@@ -74,7 +77,7 @@ export default function App() {
   }, [])
   return <div className="app-shell">
     <Header />
-    <main className="app-main"><Routes>
+    <main className="app-main"><React.Suspense fallback={<div className="empty-state" role="status">Apro la drama room…</div>}><Routes>
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
@@ -97,7 +100,8 @@ export default function App() {
       <Route path="/events" element={<ProtectedRoute><EventsList /></ProtectedRoute>} />
       <Route path="/events/create" element={<ProtectedRoute><CreateEvent /></ProtectedRoute>} />
       <Route path="/events/:id" element={<ProtectedRoute><EventDetail /></ProtectedRoute>} />
-    </Routes></main><MobileNav />
+    </Routes></React.Suspense></main><MobileNav />
+    <OnboardingTutorial loggedIn={loggedIn} />
     <footer className="app-footer">FantaDrama è un gioco di intrattenimento tra amici. Nessun denaro reale, nessuna vincita economica.</footer>
   </div>
 }

@@ -36,7 +36,15 @@ app.use(helmet({
 }))
 app.use(express.json())
 app.use(cors({ origin: process.env.CLIENT_URL || undefined }))
-app.use(rateLimit({ windowMs: 60 * 1000, max: 60 }))
+// Chat, events and participants refresh in the background. Several friends often
+// share one public IP, so an overly low IP limit blocks legitimate group sessions.
+app.use(rateLimit({
+  windowMs: 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => req.path === '/api/health'
+}))
 
 app.use('/api/health', health)
 app.use('/api/auth', auth)

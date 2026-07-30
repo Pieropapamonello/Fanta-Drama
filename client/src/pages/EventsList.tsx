@@ -11,10 +11,21 @@ const eventMood = (state?: string) => {
 
 export default function EventsList() {
   const [events, setEvents] = useState<any[]>([])
-  useEffect(() => { api.get('/events').then(r => setEvents(r.data.events)).catch(() => {}) }, [])
+  const [canCreate, setCanCreate] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    Promise.all([api.get('/events'), api.get('/groups')])
+      .then(([eventData, groupData]) => {
+        setEvents(eventData.data.events || [])
+        setCanCreate((groupData.data.groups || []).some((group: any) => group.currentUserRole === 'ADMIN'))
+      })
+      .catch(() => setError('Non riesco a caricare gli eventi. Riprova tra poco.'))
+      .finally(() => setLoading(false))
+  }, [])
   return (
     <div>
-      <div className="page-heading"><div><p className="eyebrow">Il prossimo capitolo</p><h2>Eventi</h2></div><Link to="/events/create" className="btn">+ Crea evento</Link></div>
+      <div className="page-heading"><div><p className="eyebrow">Il prossimo capitolo</p><h2>Eventi</h2></div>{canCreate && <Link to="/events/create" className="btn">+ Crea evento</Link>}</div>
       <div className="collection-grid">
         {events.map(e => {
           const mood = eventMood(e.phase || e.state)
@@ -27,7 +38,9 @@ export default function EventsList() {
           </div>
         })}
       </div>
-      {!events.length && <div className="empty-state">Qui compariranno le prossime sfide del tuo gruppo.</div>}
+      {loading && <div className="empty-state">Carico gli eventi della tua crew…</div>}
+      {!loading && !events.length && !error && <div className="empty-state">Qui compariranno le prossime sfide del tuo gruppo.</div>}
+      {error && <div className="empty-state" role="alert">{error}</div>}
     </div>
   )
 }

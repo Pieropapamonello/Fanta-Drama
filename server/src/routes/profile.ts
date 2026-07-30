@@ -97,6 +97,12 @@ router.post('/push-test', requireAuth, async (req: AuthRequest, res) => {
   return res.json({ ok: true })
 })
 
+router.post('/tutorial/complete', requireAuth, async (req: AuthRequest, res) => {
+  const completedAt = new Date().toISOString()
+  await db.collection('users').doc(req.userId!).set({ tutorialCompletedAt: completedAt, updatedAt: completedAt }, { merge: true })
+  return res.json({ ok: true, completedAt })
+})
+
 router.put('/me', requireAuth, async (req: AuthRequest, res) => {
   try {
     const data = profileSchema.parse(req.body)
@@ -107,9 +113,26 @@ router.put('/me', requireAuth, async (req: AuthRequest, res) => {
     if (!current.exists) return res.status(404).json({ error: 'not_found' })
     const authUser = await firebaseAuth.getUser(req.userId!)
     const profile = { ...current.data(), username: data.username, avatar: data.avatar, email: authUser.email ?? '', bio: data.bio ?? '', city: data.city ?? '', crewRole: data.crewRole ?? 'Jolly', motto: data.motto ?? '', notificationPreference: data.notificationPreference ?? String(current.data()?.notificationPreference ?? 'ALL'), notificationChannels: data.notificationChannels ?? channelsFromLegacy(String(current.data()?.notificationPreference ?? 'ALL')), profileCompleted: true, updatedAt: new Date().toISOString() }
-    await ref.set(profile)
+    const usernameKey = (value: string) => crypto.createHash('sha256').update(value.trim().toLocaleLowerCase('it-IT')).digest('hex')
+    const reservationRef = db.collection('usernames').doc(usernameKey(data.username))
+    const previousName = String(current.data()?.username ?? '')
+    const previousReservationRef = previousName && usernameKey(previousName) !== reservationRef.id ? db.collection('usernames').doc(usernameKey(previousName)) : null
+    await db.runTransaction(async (transaction) => {
+      const freshUser = await transaction.get(ref)
+      const reservation = await transaction.get(reservationRef)
+      const previousReservation = previousReservationRef ? await transaction.get(previousReservationRef) : null
+      if (!freshUser.exists) throw new Error('not_found')
+      if (reservation.exists && reservation.data()?.userId !== req.userId!) throw new Error('username_taken')
+      transaction.set(ref, profile)
+      transaction.set(reservationRef, { userId: req.userId!, username: data.username, updatedAt: profile.updatedAt })
+      if (previousReservationRef && previousReservation?.data()?.userId === req.userId!) transaction.delete(previousReservationRef)
+    })
     return res.json({ user: await profileWithConnections(req.userId!) })
-  } catch (error: any) { return res.status(400).json({ error: error.message ?? 'invalid_profile' }) }
+  } catch (error: any) {
+    if (error.message === 'username_taken') return res.status(409).json({ error: 'username_taken' })
+    if (error.message === 'not_found') return res.status(404).json({ error: 'not_found' })
+    return res.status(400).json({ error: error.message ?? 'invalid_profile' })
+  }
 })
 
 router.post('/telegram-link', requireAuth, async (req: AuthRequest, res) => {

@@ -108,13 +108,20 @@ router.post('/join', requireAuth, async (req: AuthRequest, res) => {
 })
 
 router.get('/', requireAuth, async (req: AuthRequest, res) => {
-  const snapshot = await (await isPlatformAdmin(req.userId!)
+  const platformAdmin = await isPlatformAdmin(req.userId!)
+  const snapshot = await (platformAdmin
     ? db.collection('groups').get()
     : db.collection('groups').where('memberIds', 'array-contains', req.userId!).get())
   const groups = await Promise.all(snapshot.docs.map(async (doc) => {
     const group = doc.data() as Record<string, unknown>
     const memberIds = (group.memberIds as string[] | undefined) ?? []
-    return { ...documentData(doc.id, group), memberCount: memberIds.length, members: await publicMembers(memberIds) }
+    const { memberRoles: _memberRoles, memberIds: _memberIds, ...publicGroup } = group
+    return {
+      ...documentData(doc.id, publicGroup),
+      memberCount: memberIds.length,
+      members: await publicMembers(memberIds),
+      currentUserRole: (group.memberRoles as Record<string, string> | undefined)?.[req.userId!] ?? (platformAdmin ? 'ADMIN' : 'MEMBER')
+    }
   }))
   return res.json({ groups })
 })
@@ -179,7 +186,14 @@ router.get('/:id', requireAuth, async (req: AuthRequest, res) => {
   const snapshot = await db.collection('groups').doc(req.params.id).get()
   if (!snapshot.exists || (!(snapshot.data()?.memberIds as string[]).includes(req.userId!) && !await isPlatformAdmin(req.userId!))) return res.status(404).json({ error: 'not_found' })
   const group = snapshot.data() as Record<string, unknown>
-  return res.json({ group: { ...documentData(snapshot.id, group), members: await publicMembers((group.memberIds as string[] | undefined) ?? []) } })
+  const { memberRoles: _memberRoles, memberIds: _memberIds, ...publicGroup } = group
+  return res.json({
+    group: {
+      ...documentData(snapshot.id, publicGroup),
+      members: await publicMembers((group.memberIds as string[] | undefined) ?? []),
+      currentUserRole: (group.memberRoles as Record<string, string> | undefined)?.[req.userId!] ?? (await isPlatformAdmin(req.userId!) ? 'ADMIN' : 'MEMBER')
+    }
+  })
 })
 
 router.delete('/:id', requireAuth, async (req: AuthRequest, res) => {

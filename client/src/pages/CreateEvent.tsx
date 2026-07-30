@@ -8,23 +8,25 @@ import { useNavigate } from 'react-router-dom'
 import ImageForge from '../components/ImageForge'
 
 const schema = z.object({ title: z.string().min(1), description: z.string().optional(), startsAt: z.string().min(1), endsAt: z.string().min(1), groupId: z.string().min(1), acquisitionMode: z.enum(['AUCTION', 'DIRECT']), imageUrl: z.string().optional() })
+type EventForm = z.infer<typeof schema>
 const keyFor = (card: any) => card.catalogCardId ? `custom:${card.catalogCardId}` : `starter:${card.slug}`
 
 export default function CreateEvent() {
-  const { register, handleSubmit, setValue, watch } = useForm({ resolver: zodResolver(schema), defaultValues: { acquisitionMode: 'AUCTION' } })
+  const { register, handleSubmit, setValue, watch } = useForm<EventForm>({ resolver: zodResolver(schema), defaultValues: { acquisitionMode: 'AUCTION' } })
   const navigate = useNavigate()
   const [groups, setGroups] = useState<any[]>([])
   const [cards, setCards] = useState<any[]>([])
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
+  const [loadingOptions, setLoadingOptions] = useState(true)
   const [saving, setSaving] = useState(false)
   const mode = watch('acquisitionMode')
 
   useEffect(() => {
     Promise.all([api.get('/groups'), api.get('/cards/library')]).then(([groupData, cardData]) => {
-      setGroups(groupData.data.groups || [])
+      setGroups((groupData.data.groups || []).filter((group: any) => group.currentUserRole === 'ADMIN'))
       const library = cardData.data.cards || []; setCards(library); setSelected(new Set(library.map(keyFor)))
-    }).catch(() => setError('Non riesco a caricare gruppi e carte.'))
+    }).catch(() => setError('Non riesco a caricare gruppi e carte.')).finally(() => setLoadingOptions(false))
   }, [])
 
   const common = useMemo(() => cards.filter((card) => !card.catalogCardId), [cards])
@@ -52,7 +54,8 @@ export default function CreateEvent() {
     <section className="event-card-picker-head"><div><p className="eyebrow">Mazzo dell’evento</p><h3>Scegli le carte da generare</h3><p>Le carte acquistate saranno valide soltanto per questo evento.</p></div><button type="button" className="btn btn-ghost" onClick={() => setSelected(selected.size === cards.length ? new Set() : new Set(cards.map(keyFor)))}>{selected.size === cards.length ? 'Deseleziona tutte' : 'Seleziona tutte'}</button></section>
     {cardSection('Carte comuni', common)}{cardSection('Carte create dagli utenti', community)}
     <ImageForge kind="EVENT" imageUrl={watch('imageUrl')} onChange={(url) => setValue('imageUrl', url)} />
+    {!loadingOptions && !groups.length && <p className="profile-error">Solo chi amministra una crew può creare un evento. Crea una crew oppure chiedi all’amministratore del gruppo.</p>}
     {error && <p className="profile-error">{error}</p>}
-    <button className="btn event-create-submit" disabled={saving}>{saving ? 'Creo evento e carte…' : `Crea evento con ${selected.size} carte`}</button>
+    <button className="btn event-create-submit" disabled={saving || loadingOptions || !groups.length}>{loadingOptions ? 'Carico gruppi e carte…' : saving ? 'Creo evento e carte…' : `Crea evento con ${selected.size} carte`}</button>
   </form>
 }

@@ -24,6 +24,8 @@ export default function Login() {
   const { register, handleSubmit } = useForm({ resolver: zodResolver(schema) })
   const navigate = useNavigate()
   const [telegramMessage, setTelegramMessage] = useState<string | null>(null)
+  const [emailMessage, setEmailMessage] = useState('')
+  const [emailLoading, setEmailLoading] = useState(false)
   const afterLoginPath = () => { const target = sessionStorage.getItem('fd_after_login'); sessionStorage.removeItem('fd_after_login'); return target || '/dashboard' }
   const telegramAttempted = useRef(false)
   useEffect(() => {
@@ -66,6 +68,8 @@ export default function Login() {
     else if (reason) setTelegramMessage('Accesso Telegram annullato o non riuscito. Riprova quando vuoi.')
   }, [])
   const onSubmit = async (data: any) => {
+    if (emailLoading) return
+    setEmailLoading(true); setEmailMessage('')
     try {
       const credential = await signInWithEmailAndPassword(firebaseAuth, data.email, data.password)
       const token = await credential.user.getIdToken()
@@ -75,8 +79,8 @@ export default function Login() {
       navigate(bootstrap.data.user?.profileCompleted ? afterLoginPath() : '/profile/setup')
     } catch (err: any) {
       console.error(err)
-      alert('Errore login')
-    }
+      setEmailMessage('Email o password non corretti. Controlla i dati e riprova.')
+    } finally { setEmailLoading(false) }
   }
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="auth-card max-w-md">
@@ -104,7 +108,8 @@ export default function Login() {
         <input id="login-email" autoComplete="email" {...register('email')} className="input" />
         <label htmlFor="login-password">Password</label>
         <input id="login-password" autoComplete="current-password" type="password" {...register('password')} className="input" />
-        <button className="btn auth-email-submit">Accedi con email</button>
+        {emailMessage && <p className="auth-status" role="alert">{emailMessage}</p>}
+        <button className="btn auth-email-submit" disabled={emailLoading}>{emailLoading ? 'Accesso…' : 'Accedi con email'}</button>
       </div>
 
       <div className="auth-passkey">

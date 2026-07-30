@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
@@ -16,9 +16,11 @@ const schema = z.object({
 }).refine((d) => d.password === d.confirm, { message: "Le password non corrispondono", path: ['confirm'] })
 
 export default function Register() {
-  const { register, handleSubmit } = useForm({ resolver: zodResolver(schema) })
+  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm({ resolver: zodResolver(schema) })
   const navigate = useNavigate()
+  const [error, setError] = useState('')
   const onSubmit = async (data: any) => {
+    setError('')
     try {
       const credential = await createUserWithEmailAndPassword(firebaseAuth, data.email, data.password)
       const token = await credential.user.getIdToken()
@@ -26,23 +28,28 @@ export default function Register() {
       localStorage.setItem('fd_token', token)
       setAuthToken(token)
       navigate(bootstrap.data.user?.profileCompleted ? '/dashboard' : '/profile/setup')
-    } catch (err) {
+    } catch (err: any) {
       console.error(err)
-      alert('Errore registrazione')
+      setError(err.code === 'auth/email-already-in-use' ? 'Questa email è già registrata. Prova ad accedere.' : 'Non riesco a creare l’account. Controlla i dati e riprova.')
     }
   }
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="max-w-md">
       <h2 className="text-2xl mb-4">Registrati</h2>
       <label className="block mb-2">Username</label>
-      <input {...register('username')} className="input" />
+      <input {...register('username')} className="input" autoComplete="username" />
+      {errors.username && <p className="profile-error">Inserisci almeno 3 caratteri.</p>}
       <label className="block mb-2 mt-4">Email</label>
-      <input {...register('email')} className="input" />
+      <input type="email" autoComplete="email" {...register('email')} className="input" />
+      {errors.email && <p className="profile-error">Inserisci un indirizzo email valido.</p>}
       <label className="block mb-2 mt-4">Password</label>
-      <input type="password" {...register('password')} className="input" />
+      <input type="password" autoComplete="new-password" {...register('password')} className="input" />
+      {errors.password && <p className="profile-error">La password deve avere almeno 8 caratteri.</p>}
       <label className="block mb-2 mt-4">Conferma Password</label>
-      <input type="password" {...register('confirm')} className="input" />
-      <button className="btn mt-4">Crea account</button>
+      <input type="password" autoComplete="new-password" {...register('confirm')} className="input" />
+      {errors.confirm && <p className="profile-error">Le password non corrispondono.</p>}
+      {error && <p className="profile-error" role="alert">{error}</p>}
+      <button className="btn mt-4" disabled={isSubmitting}>{isSubmitting ? 'Creazione account…' : 'Crea account'}</button>
       <div className="mt-6 border-t pt-4 text-center text-sm text-slate-600">oppure registrati senza email</div>
       <TelegramLoginButton label="Registrati con Telegram" />
     </form>
