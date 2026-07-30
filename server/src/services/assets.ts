@@ -25,6 +25,7 @@ function imagePrompt(kind: AssetKind, description: string) {
     .replace(/mangia il panino/gi, 'eating a simple sandwich')
     .replace(/mangia un panino/gi, 'eating a simple sandwich')
     .replace(/campagna/gi, 'countryside')
+  const asksForPeople = /\b(bambin\w*|ragazz\w*|persona\w*|uomo|donna|amici|ragazzo|ragazza|people|person|child|girl|boy)\b/i.test(`${safeDescription} ${modelDescription}`)
   const humanGuard = asksForPeople
     ? 'Depict only ordinary fictional humans with natural human anatomy, natural skin tones, two eyes, two arms and two hands. No mutants, aliens, animals, insects, masks, exaggerated cartoon faces, distorted limbs, horror, or unsettling imagery.'
     : 'No people, animals, monsters, reptiles, insects, masks, horror, or unsettling imagery.'
