@@ -226,7 +226,13 @@ async function generateWithCloudflare(kind: AssetKind, prompt: string): Promise<
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID
   const apiToken = process.env.CLOUDFLARE_AI_TOKEN
   if (!accountId || !apiToken) throw new Error('cloudflare_image_generation_not_configured')
-  const model = process.env.CLOUDFLARE_IMAGE_MODEL ?? '@cf/stabilityai/stable-diffusion-xl-base-1.0'
+  // SDXL was retired from the current Workers AI catalogue.  Transparently
+  // migrate an old Render value as well as the default so old deployments do
+  // not keep returning a cryptic HTTP 400.
+  const configuredModel = process.env.CLOUDFLARE_IMAGE_MODEL?.trim()
+  const model = !configuredModel || configuredModel === '@cf/stabilityai/stable-diffusion-xl-base-1.0'
+    ? '@cf/lykon/dreamshaper-8-lcm'
+    : configuredModel
   const eventImage = kind === 'EVENT'
   const flux = model.includes('flux-')
   const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/run/${model}`, {
@@ -241,7 +247,11 @@ async function generateWithCloudflare(kind: AssetKind, prompt: string): Promise<
       guidance: 7.5
     })
   })
-  if (!response.ok) throw new Error(`image_generation_failed_${response.status}`)
+  if (!response.ok) {
+    const detail = (await response.text()).replace(/\s+/g, ' ').slice(0, 500)
+    console.warn('Cloudflare image generation rejected', { status: response.status, model, detail })
+    throw new Error(`image_generation_failed_${response.status}`)
+  }
   const contentType = response.headers.get('content-type') ?? ''
   const payload = Buffer.from(await response.arrayBuffer())
   if (contentType.startsWith('image/')) return { buffer: payload, contentType }
