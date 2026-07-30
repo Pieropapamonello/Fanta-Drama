@@ -7,6 +7,8 @@ type AssetStorageProvider = 'firebase' | 'dropbox'
 type GeneratedImage = { buffer: Buffer; contentType: string }
 export type StoredAsset = { imageUrl: string; storagePath?: string }
 
+let cachedDropboxAccessToken: { value: string; expiresAt: number } | null = null
+
 function imagePrompt(kind: AssetKind, description: string) {
   const style = 'Original FantaDrama social-game universe; refined glossy 3D editorial illustration; cinematic violet, indigo, cyan and hot-pink lighting; family-friendly social party mood; no text, no letters, no logos, no watermark, no celebrity, no recognizable real person, no copyrighted characters.'
   if (kind === 'CARD') return `Collectible game card artwork, vertical composition. Represent this request literally as a clear object or a cheerful party-table scene: ${description}. Keep the subject central and immediately understandable. Do not invent monsters, reptiles, animals, skeletons, horror, violence, masks, or strange characters. Prefer elegant objects, decorations, food, table settings, lights, confetti, cards, or an empty place setting when appropriate. No people unless the description explicitly asks for them. No readable writing anywhere. ${style}`
@@ -54,6 +56,34 @@ async function dropboxRequest(endpoint: string, accessToken: string, body: unkno
   })
 }
 
+/**
+ * Dropbox access tokens are intentionally short-lived.  When OAuth refresh
+ * credentials are configured this obtains and caches a fresh one; the legacy
+ * static token remains supported while the account is being migrated.
+ */
+async function getDropboxAccessToken() {
+  if (cachedDropboxAccessToken && cachedDropboxAccessToken.expiresAt > Date.now()) return cachedDropboxAccessToken.value
+  const refreshToken = process.env.DROPBOX_REFRESH_TOKEN?.trim()
+  const appKey = process.env.DROPBOX_APP_KEY?.trim()
+  const appSecret = process.env.DROPBOX_APP_SECRET?.trim()
+  if (refreshToken && appKey && appSecret) {
+    const authorization = Buffer.from(`${appKey}:${appSecret}`).toString('base64')
+    const response = await fetch('https://api.dropboxapi.com/oauth2/token', {
+      method: 'POST',
+      headers: { Authorization: `Basic ${authorization}`, 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken }).toString()
+    })
+    if (!response.ok) throw new Error(`dropbox_token_refresh_failed_${response.status}`)
+    const payload = await response.json() as { access_token?: string; expires_in?: number }
+    if (!payload.access_token) throw new Error('dropbox_token_refresh_failed_missing_token')
+    cachedDropboxAccessToken = { value: payload.access_token, expiresAt: Date.now() + Math.max(60, Number(payload.expires_in ?? 14400) - 120) * 1000 }
+    return cachedDropboxAccessToken.value
+  }
+  const staticToken = process.env.DROPBOX_ACCESS_TOKEN?.trim()
+  if (!staticToken) throw new Error('dropbox_storage_not_configured')
+  return staticToken
+}
+
 async function ensureDropboxFolder(accessToken: string, path: string) {
   let current = ''
   for (const part of path.split('/').filter(Boolean)) {
@@ -71,8 +101,7 @@ async function ensureDropboxFolder(accessToken: string, path: string) {
 }
 
 async function saveToDropbox(userId: string, kind: AssetKind, buffer: Buffer, contentType: string): Promise<StoredAsset> {
-  const accessToken = process.env.DROPBOX_ACCESS_TOKEN?.trim()
-  if (!accessToken) throw new Error('dropbox_storage_not_configured')
+  const accessToken = await getDropboxAccessToken()
   const folder = `${dropboxAssetFolder()}/${kind.toLowerCase()}/${userId}`
   await ensureDropboxFolder(accessToken, folder)
   const path = `${folder}/${crypto.randomUUID()}.${extensionFor(contentType)}`
@@ -271,8 +300,7 @@ export async function deleteDropboxAsset(storagePath?: string) {
   if (!storagePath || assetStorageProvider() !== 'dropbox') return { deleted: false, reason: 'no_dropbox_path' }
   const root = dropboxAssetFolder()
   if (!storagePath.startsWith(`${root}/`)) throw new Error('invalid_dropbox_asset_path')
-  const accessToken = process.env.DROPBOX_ACCESS_TOKEN?.trim()
-  if (!accessToken) throw new Error('dropbox_storage_not_configured')
+  const accessToken = await getDropboxAccessToken()
   const response = await dropboxRequest('files/delete_v2', accessToken, { path: storagePath })
   if (!response.ok && response.status !== 409) throw new Error(`dropbox_delete_failed_${response.status}`)
   return { deleted: response.ok }
