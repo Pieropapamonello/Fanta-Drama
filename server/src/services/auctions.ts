@@ -44,11 +44,10 @@ export async function createEventCardAuction(eventId: string, event: Record<stri
 
 export async function createEventAuctions(eventId: string, event: Record<string, unknown>) {
   const customCards = await approvedCatalogCards()
-  const selectedKeys = new Set(Array.isArray(event.cardKeys) ? event.cardKeys.map(String) : [])
   const cards: any[] = [
     ...starterCards.filter((card) => Boolean(card.imageUrl)).map((card) => ({ key: `starter:${card.slug}`, ...card })),
     ...customCards
-  ].filter((card) => !selectedKeys.size || selectedKeys.has(String(card.key)))
+  ]
   const cardCount = cards.length
   while (cards.length) {
     const batch = db.batch()

@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import { requireAuth, AuthRequest } from '../middleware/auth'
-import { db, documentData, groupRole } from '../services/firebase'
+import { db, documentData, firebaseAuth, groupRole } from '../services/firebase'
 import { FieldValue } from 'firebase-admin/firestore'
 import { notifyGroupMembers } from '../services/notifications'
 import { createDramaBeat } from '../services/drama-director'
@@ -25,6 +25,14 @@ function eventPhase(event: Record<string, unknown>) {
 
 function withPhase(id: string, data: Record<string, unknown>) { return { ...documentData(id, data), phase: eventPhase(data) } }
 
+async function visibleName(userId: string, profile: Record<string, any>) {
+  if (profile.username?.trim()) return profile.username.trim()
+  try {
+    const account = await firebaseAuth.getUser(userId)
+    return account.displayName?.trim() || account.email?.split('@')[0] || 'Giocatore'
+  } catch { return 'Giocatore' }
+}
+
 async function participantsForEvent(eventId: string, event: Record<string, unknown>) {
   const [auctions, purchases] = await Promise.all([db.collection('auctions').where('eventId', '==', eventId).get(), db.collection('eventCardPurchases').where('eventId', '==', eventId).get()])
   const memberIds = (event.participantIds as string[] | undefined) ?? []
@@ -37,7 +45,7 @@ async function participantsForEvent(eventId: string, event: Record<string, unkno
     })
     const directCards = purchases.docs.filter((purchase) => purchase.data().userId === userId).map((purchase) => { const data = purchase.data(); return { id: purchase.id, title: data.title ?? 'Carta drama', description: data.description ?? '', imageUrl: data.imageUrl ?? '', rarity: data.rarity ?? 'COMMON', state: 'Acquistata' } })
     const cards = [...auctionCards, ...directCards]
-    return { userId, username: profile.username ?? 'Giocatore', avatar: profile.avatar ?? '', crewRole: profile.crewRole ?? 'Jolly', bio: profile.bio ?? '', city: profile.city ?? '', motto: profile.motto ?? '', cards }
+    return { userId, username: await visibleName(userId, profile), avatar: profile.avatar ?? '', crewRole: profile.crewRole ?? 'Jolly', bio: profile.bio ?? '', city: profile.city ?? '', motto: profile.motto ?? '', cards }
   })
 }
 
@@ -122,7 +130,7 @@ router.get('/:id/leaderboard', requireAuth, async (req: AuthRequest, res) => {
   const entries = await Promise.all(((eventSnapshot.data()?.participantIds as string[] | undefined) ?? []).map(async (userId) => {
     const user = await db.collection('users').doc(userId).get()
     const score = scores.docs.find((doc) => doc.data().userId === userId)?.data()
-    return { userId, username: user.data()?.username ?? 'Giocatore', avatar: user.data()?.avatar ?? '', points: Number(score?.points ?? 0) }
+    return { userId, username: await visibleName(userId, user.data() ?? {}), avatar: user.data()?.avatar ?? '', points: Number(score?.points ?? 0) }
   }))
   return res.json({ leaderboard: entries.sort((left, right) => right.points - left.points || left.username.localeCompare(right.username, 'it')) })
 })

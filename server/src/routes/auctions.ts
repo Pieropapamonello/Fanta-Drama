@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { requireAuth, AuthRequest } from '../middleware/auth'
 import { db, groupRole } from '../services/firebase'
+import { isPlatformAdmin } from '../services/platform-admin'
 import { auctionsForEvent, buyEventCard, createEventAuctions, placeBid, sendAuctionReminder } from '../services/auctions'
 
 const router = Router()
@@ -9,11 +10,13 @@ const bidSchema = z.object({ amount: z.number().int().positive().max(1_000_000) 
 
 router.get('/event/:eventId', requireAuth, async (req: AuthRequest, res) => {
   const event = await db.collection('events').doc(req.params.eventId).get()
-  if (!event.exists || !await groupRole(String(event.data()?.groupId), req.userId!)) return res.status(404).json({ error: 'event_not_found' })
+  if (!event.exists || (!await groupRole(String(event.data()?.groupId), req.userId!) && !await isPlatformAdmin(req.userId!))) return res.status(404).json({ error: 'event_not_found' })
   if (!((event.data()?.participantIds as string[] | undefined) ?? []).includes(req.userId!)) return res.status(403).json({ error: 'join_event_first' })
   const existing = await db.collection('auctions').where('eventId', '==', event.id).get()
   const canCreate = event.data()?.acquisitionMode === 'DIRECT' ? new Date(String(event.data()?.endsAt)).getTime() > Date.now() : new Date(String(event.data()?.startsAt)).getTime() - 60 * 60 * 1000 > Date.now()
-  if (existing.empty && canCreate) await createEventAuctions(event.id, event.data() as Record<string, unknown>)
+  // Keep every event in sync with the public catalogue. Event-only cards are
+  // added separately and are already returned by this same query.
+  if (canCreate) await createEventAuctions(event.id, event.data() as Record<string, unknown>)
   if (event.data()?.acquisitionMode === 'DIRECT' && !existing.empty) {
     const batch = db.batch(); let changed = false
     existing.docs.forEach((card) => {
@@ -30,7 +33,7 @@ router.post('/:id/bid', requireAuth, async (req: AuthRequest, res) => {
   try {
     const data = bidSchema.parse(req.body)
     const auction = await db.collection('auctions').doc(req.params.id).get()
-    if (!auction.exists || !await groupRole(String(auction.data()?.groupId), req.userId!)) return res.status(404).json({ error: 'auction_not_found' })
+    if (!auction.exists || (!await groupRole(String(auction.data()?.groupId), req.userId!) && !await isPlatformAdmin(req.userId!))) return res.status(404).json({ error: 'auction_not_found' })
     const event = await db.collection('events').doc(String(auction.data()?.eventId)).get()
     if (!event.exists || !((event.data()?.participantIds as string[] | undefined) ?? []).includes(req.userId!)) return res.status(403).json({ error: 'join_event_first' })
     return res.json({ auction: await placeBid(auction.id, req.userId!, data.amount) })
@@ -40,7 +43,7 @@ router.post('/:id/bid', requireAuth, async (req: AuthRequest, res) => {
 router.post('/:id/buy', requireAuth, async (req: AuthRequest, res) => {
   try {
     const auction = await db.collection('auctions').doc(req.params.id).get()
-    if (!auction.exists || !await groupRole(String(auction.data()?.groupId), req.userId!)) return res.status(404).json({ error: 'card_not_found' })
+    if (!auction.exists || (!await groupRole(String(auction.data()?.groupId), req.userId!) && !await isPlatformAdmin(req.userId!))) return res.status(404).json({ error: 'card_not_found' })
     const event = await db.collection('events').doc(String(auction.data()?.eventId)).get()
     if (!event.exists || !((event.data()?.participantIds as string[] | undefined) ?? []).includes(req.userId!)) return res.status(403).json({ error: 'join_event_first' })
     return res.json({ purchase: await buyEventCard(auction.id, req.userId!) })

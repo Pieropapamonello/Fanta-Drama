@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireAuth, AuthRequest } from '../middleware/auth'
 import { db, documentData, groupRole } from '../services/firebase'
 import { notifyEventParticipants, notifyUser } from '../services/notifications'
+import { isPlatformAdmin } from '../services/platform-admin'
 
 const router = Router()
 const claimSchema = z.object({ auctionId: z.string().min(1), note: z.string().trim().max(500).optional() })
@@ -11,7 +12,7 @@ const appealSchema = z.object({ message: z.string().trim().min(4).max(1000) })
 
 async function eventAccess(eventId: string, userId: string) {
   const event = await db.collection('events').doc(eventId).get()
-  if (!event.exists || !await groupRole(String(event.data()?.groupId), userId)) return null
+  if (!event.exists || (!await groupRole(String(event.data()?.groupId), userId) && !await isPlatformAdmin(userId))) return null
   if (!((event.data()?.participantIds as string[] | undefined) ?? []).includes(userId)) return null
   return event
 }
