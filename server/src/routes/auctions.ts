@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { requireAuth, AuthRequest } from '../middleware/auth'
 import { db, groupRole } from '../services/firebase'
-import { auctionsForEvent, createEventAuctions, placeBid, sendAuctionReminder } from '../services/auctions'
+import { auctionsForEvent, buyEventCard, createEventAuctions, placeBid, sendAuctionReminder } from '../services/auctions'
 
 const router = Router()
 const bidSchema = z.object({ amount: z.number().int().positive().max(1_000_000) })
@@ -23,6 +23,14 @@ router.post('/:id/bid', requireAuth, async (req: AuthRequest, res) => {
     if (!auction.exists || !await groupRole(String(auction.data()?.groupId), req.userId!)) return res.status(404).json({ error: 'auction_not_found' })
     return res.json({ auction: await placeBid(auction.id, req.userId!, data.amount) })
   } catch (error: any) { return res.status(409).json({ error: error.message ?? 'bid_failed' }) }
+})
+
+router.post('/:id/buy', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const auction = await db.collection('auctions').doc(req.params.id).get()
+    if (!auction.exists || !await groupRole(String(auction.data()?.groupId), req.userId!)) return res.status(404).json({ error: 'card_not_found' })
+    return res.json({ purchase: await buyEventCard(auction.id, req.userId!) })
+  } catch (error: any) { return res.status(409).json({ error: error.message ?? 'direct_purchase_failed' }) }
 })
 
 export default router

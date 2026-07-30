@@ -8,7 +8,7 @@ import { isPlatformAdmin } from '../services/platform-admin'
 import { createEventAuctions, sendAuctionReminder } from '../services/auctions'
 
 const router = Router()
-const schema = z.object({ title: z.string().trim().min(1).max(120), description: z.string().trim().max(1000).optional(), startsAt: z.string().datetime(), endsAt: z.string().datetime(), groupId: z.string().min(1), closePredictionsAt: z.string().datetime().optional(), imageUrl: z.string().url().max(2048).optional() })
+const schema = z.object({ title: z.string().trim().min(1).max(120), description: z.string().trim().max(1000).optional(), startsAt: z.string().datetime(), endsAt: z.string().datetime(), groupId: z.string().min(1), acquisitionMode: z.enum(['AUCTION', 'DIRECT']).default('AUCTION'), cardKeys: z.array(z.string().regex(/^(starter|custom):[a-zA-Z0-9_-]+$/)).min(1).max(150), closePredictionsAt: z.string().datetime().optional(), imageUrl: z.string().url().max(2048).optional() })
 
 function eventPhase(event: Record<string, unknown>) {
   if (event.state === 'PRONOSTICI_CHIUSI') return 'CONCLUSO'
@@ -22,15 +22,17 @@ function eventPhase(event: Record<string, unknown>) {
 function withPhase(id: string, data: Record<string, unknown>) { return { ...documentData(id, data), phase: eventPhase(data) } }
 
 async function participantsForEvent(eventId: string, groupId: string) {
-  const [group, auctions] = await Promise.all([db.collection('groups').doc(groupId).get(), db.collection('auctions').where('eventId', '==', eventId).get()])
+  const [group, auctions, purchases] = await Promise.all([db.collection('groups').doc(groupId).get(), db.collection('auctions').where('eventId', '==', eventId).get(), db.collection('eventCardPurchases').where('eventId', '==', eventId).get()])
   const memberIds = (group.data()?.memberIds as string[] | undefined) ?? []
   const users = await Promise.all(memberIds.map((userId) => db.collection('users').doc(userId).get()))
   return users.map((user, index) => {
     const userId = memberIds[index]; const profile = user.data() ?? {}
-    const cards = auctions.docs.filter((auction) => auction.data().ownerId === userId || (auction.data().status === 'OPEN' && auction.data().leaderId === userId)).map((auction) => {
+    const auctionCards = auctions.docs.filter((auction) => auction.data().ownerId === userId || (auction.data().status === 'OPEN' && auction.data().leaderId === userId)).map((auction) => {
       const data = auction.data()
       return { id: auction.id, title: data.title ?? 'Carta drama', description: data.description ?? '', imageUrl: data.imageUrl ?? '', rarity: data.rarity ?? 'COMMON', state: data.status === 'WON' ? 'Vinta' : 'Offerta in testa' }
     })
+    const directCards = purchases.docs.filter((purchase) => purchase.data().userId === userId).map((purchase) => { const data = purchase.data(); return { id: purchase.id, title: data.title ?? 'Carta drama', description: data.description ?? '', imageUrl: data.imageUrl ?? '', rarity: data.rarity ?? 'COMMON', state: 'Acquistata' } })
+    const cards = [...auctionCards, ...directCards]
     return { userId, username: profile.username ?? 'Giocatore', avatar: profile.avatar ?? '', crewRole: profile.crewRole ?? 'Jolly', bio: profile.bio ?? '', city: profile.city ?? '', motto: profile.motto ?? '', cards }
   })
 }
@@ -51,7 +53,8 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
     const data = schema.parse(req.body)
     if (await groupRole(data.groupId, req.userId!) !== 'ADMIN' && !await isPlatformAdmin(req.userId!)) return res.status(403).json({ error: 'admin_required' })
     if (new Date(data.endsAt) <= new Date(data.startsAt)) return res.status(400).json({ error: 'invalid_dates' })
-    if (new Date(data.startsAt).getTime() < Date.now() + 60 * 60 * 1000) return res.status(400).json({ error: 'event_needs_one_hour_auction' })
+    if (data.acquisitionMode === 'AUCTION' && new Date(data.startsAt).getTime() < Date.now() + 60 * 60 * 1000) return res.status(400).json({ error: 'event_needs_one_hour_auction' })
+    if (data.acquisitionMode === 'DIRECT' && new Date(data.startsAt).getTime() <= Date.now()) return res.status(400).json({ error: 'event_must_start_in_future' })
     const ref = db.collection('events').doc()
     const event = { ...data, description: data.description ?? '', state: 'PRONOSTICI_APERTI', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
     await ref.set(event)

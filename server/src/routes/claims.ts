@@ -46,8 +46,10 @@ router.post('/event/:eventId', requireAuth, async (req: AuthRequest, res) => {
     const event = await eventAccess(req.params.eventId, req.userId!); if (!event) return res.status(404).json({ error: 'event_not_found' })
     if (new Date(String(event.data()?.startsAt)).getTime() > Date.now() || new Date(String(event.data()?.endsAt)).getTime() < Date.now()) return res.status(409).json({ error: 'claim_not_available' })
     const data = claimSchema.parse(req.body); const auction = await db.collection('auctions').doc(data.auctionId).get()
-    if (!auction.exists || auction.data()?.eventId !== event.id || auction.data()?.ownerId !== req.userId!) return res.status(403).json({ error: 'auction_not_owned' })
-    const duplicate = await db.collection('cardClaims').where('auctionId', '==', auction.id).limit(1).get(); if (!duplicate.empty) return res.status(409).json({ error: 'claim_already_exists' })
+    const directPurchaseId = Buffer.from(`${data.auctionId}\u0000${req.userId!}`).toString('base64url'); const directPurchase = await db.collection('eventCardPurchases').doc(directPurchaseId).get()
+    const ownsAuction = auction.data()?.ownerId === req.userId!; const ownsDirectCopy = auction.data()?.acquisitionMode === 'DIRECT' && directPurchase.exists
+    if (!auction.exists || auction.data()?.eventId !== event.id || (!ownsAuction && !ownsDirectCopy)) return res.status(403).json({ error: 'auction_not_owned' })
+    const duplicate = await db.collection('cardClaims').where('auctionId', '==', auction.id).get(); if (duplicate.docs.some((claim) => claim.data().userId === req.userId!)) return res.status(409).json({ error: 'claim_already_exists' })
     const ref = db.collection('cardClaims').doc(); const claim = { eventId: event.id, groupId: event.data()?.groupId, auctionId: auction.id, cardTitle: auction.data()?.title, userId: req.userId!, note: data.note ?? '', status: 'PENDING', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
     await ref.set(claim)
     void notifyGroupMembers(String(event.data()?.groupId), { kind: 'CLAIM_NEEDS_VOTES', title: `Verifica richiesta · ${claim.cardTitle}`, message: 'Un giocatore dichiara che la carta è avvenuta: conferma o nega dalla pagina evento.', path: `/events/${event.id}` }, [req.userId!])

@@ -24,12 +24,14 @@ async function approvedCatalogCards() {
 }
 
 export async function createEventAuctions(eventId: string, event: Record<string, unknown>) {
-  const closesAt = new Date(new Date(String(event.startsAt)).getTime() - 60 * 60 * 1000).toISOString()
+  const acquisitionMode = event.acquisitionMode === 'DIRECT' ? 'DIRECT' : 'AUCTION'
+  const closesAt = new Date(new Date(String(event.startsAt)).getTime() - (acquisitionMode === 'AUCTION' ? 60 * 60 * 1000 : 0)).toISOString()
   const customCards = await approvedCatalogCards()
+  const selectedKeys = new Set(Array.isArray(event.cardKeys) ? event.cardKeys.map(String) : [])
   const cards: any[] = [
     ...starterCards.filter((card) => Boolean(card.imageUrl)).map((card) => ({ key: `starter:${card.slug}`, ...card })),
     ...customCards
-  ]
+  ].filter((card) => !selectedKeys.size || selectedKeys.has(String(card.key)))
   const cardCount = cards.length
   while (cards.length) {
     const batch = db.batch()
@@ -37,12 +39,35 @@ export async function createEventAuctions(eventId: string, event: Record<string,
       const ref = db.collection('auctions').doc(`${eventId}_${String(card.key).replace(/[^a-zA-Z0-9_-]/g, '_')}`)
       batch.set(ref, {
         eventId, groupId: event.groupId, cardKey: card.key, title: card.title, description: card.description, rarity: card.rarity ?? 'COMMON', type: card.type ?? 'YES_NO', imageUrl: card.imageUrl ?? '', creatorName: card.creatorName ?? null,
-        openingBid: OPENING_BID, minIncrement: MIN_INCREMENT, currentBid: 0, leaderId: null, leaderName: null, status: 'OPEN', opensAt: new Date().toISOString(), closesAt, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+        acquisitionMode, openingBid: OPENING_BID, directPrice: Math.max(OPENING_BID, Number(card.basePoints ?? OPENING_BID)), minIncrement: MIN_INCREMENT, currentBid: 0, leaderId: null, leaderName: null, status: acquisitionMode === 'DIRECT' ? 'AVAILABLE' : 'OPEN', opensAt: new Date().toISOString(), closesAt, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
       }, { merge: true })
     })
     await batch.commit()
   }
   return cardCount
+}
+
+export async function buyEventCard(auctionId: string, userId: string) {
+  await ensureWallet(userId)
+  const auctionRef = db.collection('auctions').doc(auctionId)
+  const walletRef = db.collection('wallets').doc(userId)
+  const purchaseRef = db.collection('eventCardPurchases').doc(Buffer.from(`${auctionId}\u0000${userId}`).toString('base64url'))
+  return db.runTransaction(async (transaction) => {
+    const [auctionSnapshot, wallet, existing] = await Promise.all([transaction.get(auctionRef), transaction.get(walletRef), transaction.get(purchaseRef)])
+    if (!auctionSnapshot.exists) throw new Error('auction_not_found')
+    const auction = auctionSnapshot.data()!
+    if (auction.acquisitionMode !== 'DIRECT' || auction.status !== 'AVAILABLE' || new Date(String(auction.closesAt)).getTime() <= Date.now()) throw new Error('direct_purchase_closed')
+    if (existing.exists) return documentData(existing.id, existing.data() as Record<string, unknown>)
+    const price = Number(auction.directPrice ?? auction.openingBid ?? OPENING_BID)
+    const balance = Number(wallet.data()?.balance ?? INITIAL_CREDITS); const reserved = Number(wallet.data()?.reserved ?? 0)
+    if (balance - reserved < price) throw new Error('insufficient_credits')
+    const now = new Date().toISOString()
+    const purchase = { auctionId, eventId: auction.eventId, groupId: auction.groupId, userId, cardKey: auction.cardKey, title: auction.title, description: auction.description ?? '', imageUrl: auction.imageUrl ?? '', rarity: auction.rarity ?? 'COMMON', price, createdAt: now }
+    transaction.update(walletRef, { balance: balance - price, updatedAt: now })
+    transaction.set(purchaseRef, purchase)
+    transaction.set(db.collection('creditTransactions').doc(), { userId, amount: -price, kind: 'DIRECT_CARD_PURCHASE', auctionId, eventId: auction.eventId, createdAt: now })
+    return documentData(purchaseRef.id, purchase)
+  })
 }
 
 export async function placeBid(auctionId: string, userId: string, amount: number) {
@@ -113,12 +138,15 @@ export async function refreshAuctions() {
 export async function auctionsForEvent(eventId: string, userId: string) {
   await refreshAuctions()
   const wallet = await ensureWallet(userId)
-  const auctions = await db.collection('auctions').where('eventId', '==', eventId).get()
-  return { currentUserId: userId, wallet: wallet.data(), auctions: auctions.docs.map((auction) => documentData(auction.id, auction.data() as Record<string, unknown>)).sort((a, b) => String(a.title).localeCompare(String(b.title), 'it')) }
+  const [auctions, purchases] = await Promise.all([db.collection('auctions').where('eventId', '==', eventId).get(), db.collection('eventCardPurchases').where('eventId', '==', eventId).get()])
+  const owned = new Set(purchases.docs.filter((purchase) => purchase.data().userId === userId).map((purchase) => String(purchase.data().auctionId)))
+  const items: any[] = auctions.docs.map((auction) => ({ ...documentData(auction.id, auction.data() as Record<string, unknown>), purchasedByCurrentUser: owned.has(auction.id) }))
+  return { currentUserId: userId, wallet: wallet.data(), auctions: items.sort((a, b) => String(a.title).localeCompare(String(b.title), 'it')) }
 }
 
 export async function sendAuctionReminder(eventId: string) {
   const ref = db.collection('events').doc(eventId); const event = await ref.get(); if (!event.exists || event.data()?.auctionReminderSentAt) return false
+  if (event.data()?.acquisitionMode === 'DIRECT') return false
   const startsAt = new Date(String(event.data()?.startsAt)).getTime(); const closesAt = startsAt - 60 * 60 * 1000
   if (Date.now() < closesAt - 60 * 60 * 1000 || Date.now() >= closesAt) return false
   await ref.set({ auctionReminderSentAt: new Date().toISOString() }, { merge: true })

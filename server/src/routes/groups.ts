@@ -29,8 +29,8 @@ async function publicMembers(memberIds: string[]) {
 
 async function memberCardsInGroup(groupId: string, memberId: string) {
   const events = await db.collection('events').where('groupId', '==', groupId).get()
-  const auctions = await db.collection('auctions').where('groupId', '==', groupId).get()
-  return auctions.docs.filter((auction) => {
+  const [auctions, purchases] = await Promise.all([db.collection('auctions').where('groupId', '==', groupId).get(), db.collection('eventCardPurchases').where('groupId', '==', groupId).get()])
+  const auctionCards = auctions.docs.filter((auction) => {
     const data = auction.data()
     return data.ownerId === memberId || (data.status === 'OPEN' && data.leaderId === memberId)
   }).map((auction) => {
@@ -47,6 +47,8 @@ async function memberCardsInGroup(groupId: string, memberId: string) {
       state: card.status === 'WON' ? 'Acquistata' : 'Offerta in testa'
     }
   })
+  const directCards = purchases.docs.filter((purchase) => purchase.data().userId === memberId).map((purchase) => { const card = purchase.data(); return { id: purchase.id, eventId: card.eventId ?? '', eventTitle: events.docs.find((event) => event.id === card.eventId)?.data().title ?? 'Evento della crew', title: card.title ?? 'Carta Drama', description: card.description ?? '', imageUrl: card.imageUrl ?? '', rarity: card.rarity ?? 'COMMON', credits: Number(card.price ?? 0), state: 'Acquistata' } })
+  return [...auctionCards, ...directCards]
 }
 
 async function marketCard(cardKey: string): Promise<Record<string, any> | null> {
