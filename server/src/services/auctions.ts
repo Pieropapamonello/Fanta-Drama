@@ -5,9 +5,14 @@ import { starterCards } from '../data/starter-content'
 const INITIAL_CREDITS = 1000
 const OPENING_BID = 20
 const MIN_INCREMENT = 5
+export const DEFAULT_DIRECT_CARD_PRICE = 100
 
 function profileName(value: unknown) { return String(value || 'Un giocatore') }
 function deadlineLabel(value: unknown) { return new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(String(value))) }
+function directPriceFor(card: Record<string, any>) {
+  const price = Number(card.directPrice)
+  return Number.isInteger(price) && price > 0 ? price : DEFAULT_DIRECT_CARD_PRICE
+}
 
 export async function ensureWallet(userId: string) {
   const ref = db.collection('wallets').doc(userId)
@@ -31,7 +36,7 @@ function auctionPayload(eventId: string, event: Record<string, unknown>, card: R
     : new Date(String(event.endsAt)).toISOString()
   return {
     eventId, groupId: event.groupId, cardKey: card.key, title: card.title, description: card.description, rarity: card.rarity ?? 'COMMON', type: card.type ?? 'YES_NO', imageUrl: card.imageUrl ?? '', creatorName: card.creatorName ?? null,
-    acquisitionMode, openingBid: OPENING_BID, directPrice: Math.max(OPENING_BID, Number(card.basePoints ?? OPENING_BID)), minIncrement: MIN_INCREMENT, currentBid: 0, leaderId: null, leaderName: null, status: acquisitionMode === 'DIRECT' ? 'AVAILABLE' : 'OPEN', opensAt: new Date().toISOString(), closesAt, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+    acquisitionMode, openingBid: OPENING_BID, directPrice: directPriceFor(card), directPriceConfigured: Number.isInteger(Number(card.directPrice)) && Number(card.directPrice) > 0, minIncrement: MIN_INCREMENT, currentBid: 0, leaderId: null, leaderName: null, status: acquisitionMode === 'DIRECT' ? 'AVAILABLE' : 'OPEN', opensAt: new Date().toISOString(), closesAt, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
   }
 }
 
@@ -43,10 +48,11 @@ export async function createEventCardAuction(eventId: string, event: Record<stri
 }
 
 export async function createEventAuctions(eventId: string, event: Record<string, unknown>) {
-  const customCards = await approvedCatalogCards()
+  const [customCards, priceOverrides] = await Promise.all([approvedCatalogCards(), db.collection('cardPriceOverrides').get()])
+  const overrideByKey = new Map(priceOverrides.docs.map((item) => [String(item.data().cardKey ?? ''), Number(item.data().directPrice)]))
   const cards: any[] = [
-    ...starterCards.filter((card) => Boolean(card.imageUrl)).map((card) => ({ key: `starter:${card.slug}`, ...card })),
-    ...customCards
+    ...starterCards.filter((card) => Boolean(card.imageUrl)).map((card) => ({ key: `starter:${card.slug}`, ...card, directPrice: overrideByKey.get(`starter:${card.slug}`) ?? DEFAULT_DIRECT_CARD_PRICE })),
+    ...customCards.map((card) => ({ ...card, directPrice: directPriceFor(card) }))
   ]
   const cardCount = cards.length
   while (cards.length) {

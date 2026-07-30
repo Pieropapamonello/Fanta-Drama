@@ -1,7 +1,7 @@
 import React from 'react'
 import { Check, Heart, Plus, Sparkles } from 'lucide-react'
 
-export type DramaCardData = { id?: string, slug?: string, title: string, description?: string, effect?: string, flavor?: string, rarity?: string, type?: string, imageKey?: string, imageUrl?: string, librarySlug?: string, catalogCardId?: string, creatorName?: string }
+export type DramaCardData = { id?: string, slug?: string, title: string, description?: string, effect?: string, flavor?: string, rarity?: string, type?: string, imageKey?: string, imageUrl?: string, librarySlug?: string, catalogCardId?: string, creatorName?: string, creatorId?: string, directPrice?: number }
 const typeNames: Record<string, string> = { YES_NO: 'Previsione', PICK_CHARACTER: 'Personaggio', MULTI_CHOICE: 'Scelta', NUMBER: 'Numero', RANGE: 'Intervallo', TIME: 'Tempo', TEXT: 'Drama', FIRST_ACTION: 'Prima mossa', ORDER: 'Ordine' }
 const artFromSeed = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-')
 

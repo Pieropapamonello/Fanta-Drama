@@ -4,8 +4,9 @@ import { requireAuth, AuthRequest } from '../middleware/auth'
 import { db, documentData } from '../services/firebase'
 import { groupRole } from '../services/firebase'
 import { starterCards } from '../data/starter-content'
-import { createEventCardAuction } from '../services/auctions'
+import { createEventCardAuction, DEFAULT_DIRECT_CARD_PRICE } from '../services/auctions'
 import { notifyGroupMembers } from '../services/notifications'
+import { isPlatformAdmin } from '../services/platform-admin'
 
 const router = Router()
 const auctionOnly = (_req: AuthRequest, res: any) => res.status(410).json({ error: 'cards_are_available_only_through_event_auctions' })
@@ -13,9 +14,11 @@ const schema = z.object({
   title: z.string().trim().min(3).max(100), description: z.string().trim().min(12).max(500),
   rarity: z.enum(['COMMON', 'UNCOMMON', 'RARE', 'EPIC', 'LEGENDARY', 'MYTHIC']).optional(),
   type: z.enum(['YES_NO', 'PICK_CHARACTER', 'MULTI_CHOICE', 'NUMBER', 'RANGE', 'TIME', 'TEXT', 'FIRST_ACTION', 'ORDER']).optional(),
-  imageUrl: z.string().url().max(2048), imageStoragePath: z.string().max(1024).optional(), eventId: z.string().min(1).optional()
+  imageUrl: z.string().url().max(2048), imageStoragePath: z.string().max(1024).optional(), eventId: z.string().min(1).optional(),
+  directPrice: z.number().int().min(1).max(1_000_000).optional()
 })
 const interestSchema = z.object({ interested: z.boolean() })
+const priceSchema = z.object({ cardKey: z.string().regex(/^(starter|custom):[a-zA-Z0-9_-]+$/), directPrice: z.number().int().min(1).max(1_000_000) })
 
 function normalized(value: string) {
   return value.toLocaleLowerCase('it-IT').replace(/\s+/g, ' ').trim()
@@ -64,7 +67,7 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
     }
     const profile = await db.collection('users').doc(req.userId!).get()
     const ref = db.collection('cardCatalog').doc()
-    const card = { ...data, rarity: data.rarity ?? 'COMMON', type: data.type ?? 'YES_NO', status: 'APPROVED', scope: data.eventId ? 'EVENT' : 'GLOBAL', creatorId: req.userId!, creatorName: profile.data()?.username ?? 'Giocatore', normalizedTitle, normalizedDescription, createdAt: new Date().toISOString(), autoApprovedAt: new Date().toISOString() }
+    const card = { ...data, directPrice: data.directPrice ?? DEFAULT_DIRECT_CARD_PRICE, rarity: data.rarity ?? 'COMMON', type: data.type ?? 'YES_NO', status: 'APPROVED', scope: data.eventId ? 'EVENT' : 'GLOBAL', creatorId: req.userId!, creatorName: profile.data()?.username ?? 'Giocatore', normalizedTitle, normalizedDescription, createdAt: new Date().toISOString(), autoApprovedAt: new Date().toISOString() }
     await ref.set(card)
     if (event) {
       await createEventCardAuction(event.id, event.data() as Record<string, unknown>, ref.id, card)
@@ -72,6 +75,39 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
     }
     return res.status(201).json({ catalogCard: documentData(ref.id, card) })
   } catch (error: any) { return res.status(400).json({ error: error.message ?? 'invalid_card' }) }
+})
+
+// The price belongs to the card definition, not to the buyer.  This keeps
+// direct-purchase events fair while allowing the card creator (or platform
+// admin) to correct a price at any time before a player buys it.
+router.patch('/pricing', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { cardKey, directPrice } = priceSchema.parse(req.body)
+    const isAdmin = await isPlatformAdmin(req.userId!)
+    if (cardKey.startsWith('starter:')) {
+      if (!isAdmin) return res.status(403).json({ error: 'only_admin_can_price_starter_cards' })
+      const slug = cardKey.slice('starter:'.length)
+      if (!starterCards.some((card) => card.slug === slug)) return res.status(404).json({ error: 'card_not_found' })
+      await db.collection('cardPriceOverrides').doc(`starter_${slug}`).set({ cardKey, directPrice, updatedBy: req.userId, updatedAt: new Date().toISOString() }, { merge: true })
+    } else {
+      const cardId = cardKey.slice('custom:'.length)
+      const card = await db.collection('cardCatalog').doc(cardId).get()
+      if (!card.exists) return res.status(404).json({ error: 'card_not_found' })
+      if (!isAdmin && card.data()?.creatorId !== req.userId) return res.status(403).json({ error: 'only_creator_or_admin_can_change_price' })
+      await card.ref.update({ directPrice, priceUpdatedBy: req.userId, priceUpdatedAt: new Date().toISOString() })
+    }
+
+    // Update every open direct-purchase market immediately; there is no need
+    // to wait for the next event refresh.
+    const auctions = await db.collection('auctions').where('cardKey', '==', cardKey).get()
+    const pending = auctions.docs.filter((auction) => auction.data().acquisitionMode === 'DIRECT' && new Date(String(auction.data().closesAt)).getTime() > Date.now())
+    while (pending.length) {
+      const batch = db.batch()
+      pending.splice(0, 400).forEach((auction) => batch.update(auction.ref, { directPrice, directPriceConfigured: true, updatedAt: new Date().toISOString() }))
+      await batch.commit()
+    }
+    return res.json({ ok: true, cardKey, directPrice })
+  } catch (error: any) { return res.status(400).json({ error: error.message ?? 'price_update_failed' }) }
 })
 
 router.get('/library', requireAuth, async (_req, res) => {

@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { requireAuth, AuthRequest } from '../middleware/auth'
 import { db, groupRole } from '../services/firebase'
 import { isPlatformAdmin } from '../services/platform-admin'
-import { auctionsForEvent, buyEventCard, createEventAuctions, placeBid, sendAuctionReminder } from '../services/auctions'
+import { auctionsForEvent, buyEventCard, createEventAuctions, DEFAULT_DIRECT_CARD_PRICE, placeBid, sendAuctionReminder } from '../services/auctions'
 
 const router = Router()
 const bidSchema = z.object({ amount: z.number().int().positive().max(1_000_000) })
@@ -21,7 +21,8 @@ router.get('/event/:eventId', requireAuth, async (req: AuthRequest, res) => {
     const batch = db.batch(); let changed = false
     existing.docs.forEach((card) => {
       const data = card.data(); const status = ['OPEN', 'UNSOLD'].includes(String(data.status)) && !data.ownerId ? 'AVAILABLE' : data.status
-      if (data.acquisitionMode !== 'DIRECT' || status !== data.status || data.closesAt !== event.data()?.endsAt) { batch.set(card.ref, { acquisitionMode: 'DIRECT', status, directPrice: Number(data.directPrice ?? data.openingBid ?? 20), closesAt: event.data()?.endsAt, updatedAt: new Date().toISOString() }, { merge: true }); changed = true }
+      const directPrice = data.directPriceConfigured === true ? Math.max(1, Number(data.directPrice ?? DEFAULT_DIRECT_CARD_PRICE)) : DEFAULT_DIRECT_CARD_PRICE
+      if (data.acquisitionMode !== 'DIRECT' || status !== data.status || data.closesAt !== event.data()?.endsAt || data.directPrice !== directPrice || data.directPriceConfigured !== true) { batch.set(card.ref, { acquisitionMode: 'DIRECT', status, directPrice, directPriceConfigured: true, closesAt: event.data()?.endsAt, updatedAt: new Date().toISOString() }, { merge: true }); changed = true }
     })
     if (changed) await batch.commit()
   }

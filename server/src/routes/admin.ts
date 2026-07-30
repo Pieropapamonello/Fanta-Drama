@@ -6,6 +6,8 @@ import { closeAndScoreEvent } from '../services/scoring'
 import { grantPlatformAdmin, isPlatformAdmin, isValidAdminPassword, revokePlatformAdmin } from '../services/platform-admin'
 import { deleteDropboxAsset } from '../services/assets'
 import { rewardClaim } from './claims'
+import { starterCards } from '../data/starter-content'
+import { DEFAULT_DIRECT_CARD_PRICE } from '../services/auctions'
 
 const router = Router()
 const passwordSchema = z.object({ password: z.string().min(1).max(256) })
@@ -47,14 +49,16 @@ router.post('/lock', requireAuth, async (req: AuthRequest, res) => {
 })
 
 router.get('/overview', requireAuth, requirePlatformAdmin, async (_req, res) => {
-  const [groups, users, events, cards, appeals] = await Promise.all([db.collection('groups').get(), db.collection('users').get(), db.collection('events').get(), db.collection('cardCatalog').get(), db.collection('appeals').where('status', '==', 'OPEN').get()])
+  const [groups, users, events, cards, appeals, priceOverrides] = await Promise.all([db.collection('groups').get(), db.collection('users').get(), db.collection('events').get(), db.collection('cardCatalog').get(), db.collection('appeals').where('status', '==', 'OPEN').get(), db.collection('cardPriceOverrides').get()])
   const groupNames = new Map(groups.docs.map((group) => [group.id, String(group.data().name ?? 'Gruppo senza nome')]))
+  const starterPrice = new Map(priceOverrides.docs.map((item) => [String(item.data().cardKey ?? ''), Number(item.data().directPrice ?? DEFAULT_DIRECT_CARD_PRICE)]))
   return res.json({
     stats: { groups: groups.size, users: users.size, events: events.size, cards: cards.size },
     groups: groups.docs.map((group) => documentData(group.id, { ...group.data(), memberCount: Array.isArray(group.data().memberIds) ? group.data().memberIds.length : 0 })),
     events: events.docs.map((event) => documentData(event.id, { ...event.data(), groupName: groupNames.get(String(event.data().groupId)) ?? 'Gruppo eliminato' })),
     users: users.docs.map((user) => documentData(user.id, user.data() as Record<string, unknown>)),
     cards: cards.docs.map((card) => documentData(card.id, card.data() as Record<string, unknown>)),
+    starterCards: starterCards.filter((card) => Boolean(card.imageUrl)).map((card) => ({ ...card, cardKey: `starter:${card.slug}`, directPrice: starterPrice.get(`starter:${card.slug}`) ?? DEFAULT_DIRECT_CARD_PRICE })),
     appeals: appeals.docs.map((appeal) => documentData(appeal.id, appeal.data() as Record<string, unknown>))
   })
 })

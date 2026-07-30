@@ -2,7 +2,7 @@ import React, { FormEvent, useCallback, useEffect, useState } from 'react'
 import api from '../services/api'
 import AdminModeration from '../components/AdminModeration'
 
-type Overview = { stats: { users: number, groups: number, events: number, cards: number }, groups: any[], events: any[], users: any[], cards: any[], appeals: any[] }
+type Overview = { stats: { users: number, groups: number, events: number, cards: number }, groups: any[], events: any[], users: any[], cards: any[], starterCards: any[], appeals: any[] }
 
 export default function AdminConsole() {
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null)
@@ -55,6 +55,24 @@ export default function AdminConsole() {
     finally { setWorking(null) }
   }
 
+  const updatePrice = async (cardKey: string, title: string, currentPrice: number) => {
+    const raw = window.prompt(`Prezzo diretto per “${title}”`, String(currentPrice || 100))
+    if (raw === null) return
+    const directPrice = Number(raw)
+    if (!Number.isInteger(directPrice) || directPrice < 1) { setNotice('Inserisci un prezzo intero maggiore di zero.'); return }
+    setWorking(`price-${cardKey}`); setNotice('')
+    try {
+      await api.patch('/cards/pricing', { cardKey, directPrice })
+      setOverview((current) => current ? {
+        ...current,
+        cards: current.cards.map((card) => `custom:${card.id}` === cardKey ? { ...card, directPrice } : card),
+        starterCards: (current.starterCards || []).map((card) => card.cardKey === cardKey ? { ...card, directPrice } : card)
+      } : current)
+      setNotice(`Prezzo di ${title} aggiornato a ${directPrice} crediti.`)
+    } catch (error: any) { setNotice(error.response?.data?.error || 'Non riesco ad aggiornare il prezzo.') }
+    finally { setWorking(null) }
+  }
+
   const mergeUsers = async () => {
     if (!primaryUserId || !secondaryUserId || primaryUserId === secondaryUserId) { setNotice('Scegli due profili diversi: prima quello da mantenere, poi quello da assorbire.'); return }
     const primary = overview?.users.find((user) => user.id === primaryUserId); const secondary = overview?.users.find((user) => user.id === secondaryUserId)
@@ -81,6 +99,7 @@ export default function AdminConsole() {
         <section className="admin-panel"><h3>Eventi</h3>{overview.events.length ? overview.events.map((event) => <article className="admin-row" key={event.id}><div><strong>{event.title}</strong><p>{event.groupName} · {event.state}</p></div>{event.state !== 'PRONOSTICI_CHIUSI' && <button type="button" className="btn btn-ghost" onClick={() => closeEvent(event.id)} disabled={working === `event-${event.id}`}>{working === `event-${event.id}` ? 'Chiudo...' : 'Chiudi'}</button>}</article>) : <p className="muted">Nessun evento.</p>}</section>
       </div>
       <section className="admin-panel admin-cards"><h3>Carte create dalla community</h3>{overview.cards.length ? overview.cards.map((card) => <article className="admin-row" key={card.id}>{card.imageUrl && <img className="admin-card-preview" src={card.imageUrl} alt="" />}<div><strong>{card.title}</strong><p>{card.creatorName || 'Giocatore'} · {new Date(card.createdAt).toLocaleString('it-IT')}</p></div><button type="button" className="admin-danger" onClick={() => deleteCard(card)} disabled={working === `card-${card.id}`}>{working === `card-${card.id}` ? 'Elimino...' : 'Elimina carta'}</button></article>) : <p className="muted">Nessuna carta creata dalla community.</p>}</section>
+      <section className="admin-panel"><h3>Prezzi in acquisto diretto</h3><p>Puoi modificare ogni prezzo: 100 crediti è la base. I mercati diretti ancora aperti si aggiornano subito.</p><div className="admin-price-list">{overview.cards.map((card) => <article className="admin-row" key={`price-${card.id}`}><div><strong>{card.title}</strong><p>Carta community · {card.directPrice ?? 100} crediti</p></div><button type="button" className="btn btn-ghost" onClick={() => void updatePrice(`custom:${card.id}`, card.title, card.directPrice ?? 100)} disabled={working === `price-custom:${card.id}`}>Modifica</button></article>)}</div><details className="admin-starter-prices"><summary>Gestisci le {overview.starterCards?.length || 0} carte base</summary><div className="admin-price-list">{(overview.starterCards || []).map((card) => <article className="admin-row" key={card.cardKey}><div><strong>{card.title}</strong><p>{card.directPrice} crediti</p></div><button type="button" className="btn btn-ghost" onClick={() => void updatePrice(card.cardKey, card.title, card.directPrice)} disabled={working === `price-${card.cardKey}`}>Modifica</button></article>)}</div></details></section>
       <section className="admin-panel admin-users"><h3>Utenti registrati</h3><div className="admin-user-list">{overview.users.map((user) => <span key={user.id}>{user.avatar ? <img src={user.avatar} alt="" /> : <i>{String(user.username || '?').slice(0, 1).toUpperCase()}</i>}{user.username || 'Senza nome'}</span>)}</div></section>
       <section className="admin-panel admin-merge"><h3>Unisci due profili</h3><p>Usa questa funzione quando la stessa persona ha un account e-mail e uno Telegram. Il primo profilo viene mantenuto; il secondo diventa un accesso collegato.</p><div><select className="input" value={primaryUserId} onChange={(event) => setPrimaryUserId(event.target.value)}><option value="">Profilo da mantenere</option>{overview.users.filter((user) => !user.mergedInto).map((user) => <option value={user.id} key={user.id}>{user.username || user.id}</option>)}</select><select className="input" value={secondaryUserId} onChange={(event) => setSecondaryUserId(event.target.value)}><option value="">Profilo da assorbire</option>{overview.users.filter((user) => !user.mergedInto).map((user) => <option value={user.id} key={user.id}>{user.username || user.id}</option>)}</select><button type="button" className="admin-danger" onClick={() => void mergeUsers()} disabled={working === 'merge-users'}>{working === 'merge-users' ? 'Unisco...' : 'Unisci profili'}</button></div></section>
     </>}

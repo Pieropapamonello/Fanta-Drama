@@ -3,11 +3,52 @@ import { Link } from 'react-router-dom'
 import DramaCard, { DramaCardData } from '../components/DramaCard'
 import CardExplorer, { playEpicSound, startEpicAmbience, stopEpicAmbience } from '../components/CardExplorer'
 import api from '../services/api'
+import { firebaseAuth } from '../services/firebase'
 
 const cardKey = (card: DramaCardData) => card.catalogCardId ? `custom:${card.catalogCardId}` : `starter:${card.slug}`
+
 export default function CardsList() {
-  const [cards, setCards] = useState<DramaCardData[]>([]); const [interests, setInterests] = useState(new Set<string>()); const [notice, setNotice] = useState(''); const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
-  useEffect(() => { Promise.all([api.get('/cards/library'), api.get('/cards/interests')]).then(([library, saved]) => { setCards(library.data.cards || []); setInterests(new Set(saved.data.keys || [])) }).catch(() => setNotice('Non riesco a caricare il catalogo.')) }, [])
-  const saveInterest = async (card: DramaCardData, interested: boolean) => { const key = cardKey(card); await api.put(`/cards/interests/${encodeURIComponent(key)}`, { interested }); setInterests((current) => { const next = new Set(current); if (interested) next.add(key); else next.delete(key); return next }) }
-  return <div><div className="page-heading"><div><p className="eyebrow">L’arsenale del caos</p><h2>Carte Drama</h2></div><Link to="/cards/create" className="btn">+ Crea carta</Link></div><p className="page-lead">Tocca una carta per scoprirla a grandezza piena. Scorri a destra per salvarla tra quelle che ti interessano, a sinistra per passare oltre.</p><div className="card-buy-banner"><div><strong>Compra carte con i crediti</strong><span>Apri un evento, scegli una carta e fai la tua offerta: vince chi rilancia di più prima della chiusura.</span></div><Link to="/events" className="btn btn-ghost">Vai alle aste</Link></div>{notice && <div className="deck-notice">{notice}</div>}<section className="deck-section library-section"><div className="deck-section-head"><div><p className="eyebrow">Catalogo approvato</p><h3>Carte disponibili <span>{cards.length}</span></h3></div><p>Le carte saranno messe all’asta quando viene creato un evento.</p></div><div className="drama-card-grid">{cards.map((card, index) => <DramaCard key={card.catalogCardId || card.slug} card={card} interested={interests.has(cardKey(card))} onInspect={() => { startEpicAmbience(); playEpicSound('open'); setSelectedIndex(index) }} />)}</div></section>{selectedIndex !== null && <CardExplorer cards={cards} initialIndex={selectedIndex} interests={interests} onClose={() => { stopEpicAmbience(); setSelectedIndex(null) }} onInterest={saveInterest} />}</div>
+  const [cards, setCards] = useState<DramaCardData[]>([])
+  const [interests, setInterests] = useState(new Set<string>())
+  const [notice, setNotice] = useState('')
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
+
+  useEffect(() => {
+    Promise.all([api.get('/cards/library'), api.get('/cards/interests')])
+      .then(([library, saved]) => { setCards(library.data.cards || []); setInterests(new Set(saved.data.keys || [])) })
+      .catch(() => setNotice('Non riesco a caricare il catalogo.'))
+  }, [])
+
+  const saveInterest = async (card: DramaCardData, interested: boolean) => {
+    const key = cardKey(card)
+    await api.put(`/cards/interests/${encodeURIComponent(key)}`, { interested })
+    setInterests((current) => { const next = new Set(current); if (interested) next.add(key); else next.delete(key); return next })
+  }
+
+  const changePrice = async (card: DramaCardData) => {
+    const current = Number(card.directPrice ?? 100)
+    const requested = window.prompt(`Prezzo diretto per “${card.title}”`, String(current))
+    if (requested === null) return
+    const directPrice = Number(requested)
+    if (!Number.isInteger(directPrice) || directPrice < 1) { setNotice('Inserisci un prezzo intero maggiore di zero.'); return }
+    try {
+      await api.patch('/cards/pricing', { cardKey: cardKey(card), directPrice })
+      setCards((items) => items.map((item) => cardKey(item) === cardKey(card) ? { ...item, directPrice } : item))
+      setNotice(`Prezzo di ${card.title} aggiornato a ${directPrice} crediti.`)
+    } catch (error: any) {
+      setNotice(error.response?.data?.error === 'only_creator_or_admin_can_change_price' ? 'Può modificare il prezzo solo chi ha creato la carta o l’amministratore.' : 'Non riesco ad aggiornare il prezzo.')
+    }
+  }
+
+  const myCards = cards.filter((card: any) => card.creatorId && card.creatorId === firebaseAuth.currentUser?.uid)
+
+  return <div>
+    <div className="page-heading"><div><p className="eyebrow">L’arsenale del caos</p><h2>Carte Drama</h2></div><Link to="/cards/create" className="btn">+ Crea carta</Link></div>
+    <p className="page-lead">Tocca una carta per scoprirla a grandezza piena. Scorri a destra per salvarla tra quelle che ti interessano, a sinistra per passare oltre.</p>
+    <div className="card-buy-banner"><div><strong>Compra carte con i crediti</strong><span>Apri un evento, scegli una carta e fai la tua offerta: vince chi rilancia di più prima della chiusura.</span></div><Link to="/events" className="btn btn-ghost">Vai alle aste</Link></div>
+    {notice && <div className="deck-notice">{notice}</div>}
+    {myCards.length > 0 && <section className="deck-section creator-prices"><div className="deck-section-head"><div><p className="eyebrow">Le tue creazioni</p><h3>Prezzi in acquisto diretto</h3></div><p>Solo tu e l’amministratore potete modificarli.</p></div><div>{myCards.map((card) => <button type="button" className="btn btn-ghost" key={card.catalogCardId} onClick={() => void changePrice(card)}>{card.title} · {card.directPrice ?? 100} crediti · Modifica</button>)}</div></section>}
+    <section className="deck-section library-section"><div className="deck-section-head"><div><p className="eyebrow">Catalogo approvato</p><h3>Carte disponibili <span>{cards.length}</span></h3></div><p>Le carte saranno messe all’asta quando viene creato un evento.</p></div><div className="drama-card-grid">{cards.map((card, index) => <DramaCard key={card.catalogCardId || card.slug} card={card} interested={interests.has(cardKey(card))} onInspect={() => { startEpicAmbience(); playEpicSound('open'); setSelectedIndex(index) }} />)}</div></section>
+    {selectedIndex !== null && <CardExplorer cards={cards} initialIndex={selectedIndex} interests={interests} onClose={() => { stopEpicAmbience(); setSelectedIndex(null) }} onInterest={saveInterest} />}
+  </div>
 }
