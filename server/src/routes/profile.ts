@@ -4,7 +4,7 @@ import crypto from 'crypto'
 import { requireAuth, AuthRequest } from '../middleware/auth'
 import { db, documentData, firebaseAuth } from '../services/firebase'
 import { ensureWallet } from '../services/auctions'
-import { sendDeviceNotificationTest } from '../services/notifications'
+import { notifyUser, sendDeviceNotificationTest } from '../services/notifications'
 
 const router = Router()
 const avatars = ['/characters/pulse.png', '/characters/mischief.png', '/characters/shock.png', '/characters/calm.png', '/avatars/common/violet-curly.png', '/avatars/common/silver-blue.png'] as const
@@ -95,6 +95,17 @@ router.post('/push-test', requireAuth, async (req: AuthRequest, res) => {
   const delivery = await sendDeviceNotificationTest(req.userId!)
   if (delivery.status !== 'sent') return res.status(409).json({ error: delivery.status })
   return res.json({ ok: true })
+})
+
+router.post('/notification-test', requireAuth, async (req: AuthRequest, res) => {
+  const deliveries = await notifyUser(req.userId!, {
+    title: 'Test canali FantaDrama',
+    message: 'Se leggi questo avviso, il canale è pronto per rilanci, carte e aggiornamenti della crew.',
+    path: '/notifications',
+    actionLabel: 'Apri notifiche',
+    kind: 'SCORE_UPDATED'
+  })
+  return res.json({ ok: true, deliveries })
 })
 
 router.post('/tutorial/complete', requireAuth, async (req: AuthRequest, res) => {
