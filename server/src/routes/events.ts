@@ -37,7 +37,7 @@ async function participantsForEvent(eventId: string, event: Record<string, unkno
   const [auctions, purchases] = await Promise.all([db.collection('auctions').where('eventId', '==', eventId).get(), db.collection('eventCardPurchases').where('eventId', '==', eventId).get()])
   const memberIds = (event.participantIds as string[] | undefined) ?? []
   const users = await Promise.all(memberIds.map((userId) => db.collection('users').doc(userId).get()))
-  return users.map((user, index) => {
+  return Promise.all(users.map(async (user, index) => {
     const userId = memberIds[index]; const profile = user.data() ?? {}
     const auctionCards = auctions.docs.filter((auction) => auction.data().ownerId === userId || (auction.data().status === 'OPEN' && auction.data().leaderId === userId)).map((auction) => {
       const data = auction.data()
@@ -46,7 +46,7 @@ async function participantsForEvent(eventId: string, event: Record<string, unkno
     const directCards = purchases.docs.filter((purchase) => purchase.data().userId === userId).map((purchase) => { const data = purchase.data(); return { id: purchase.id, title: data.title ?? 'Carta drama', description: data.description ?? '', imageUrl: data.imageUrl ?? '', rarity: data.rarity ?? 'COMMON', state: 'Acquistata' } })
     const cards = [...auctionCards, ...directCards]
     return { userId, username: await visibleName(userId, profile), avatar: profile.avatar ?? '', crewRole: profile.crewRole ?? 'Jolly', bio: profile.bio ?? '', city: profile.city ?? '', motto: profile.motto ?? '', cards }
-  })
+  }))
 }
 
 async function announceNewEvent(eventId: string, event: Record<string, unknown>, excludedUserId: string) {
