@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { requireAuth, AuthRequest } from '../middleware/auth'
 import { db, documentData, groupRole } from '../services/firebase'
-import { notifyEventParticipants, notifyGroupMembers, notifyUser } from '../services/notifications'
+import { notifyEventParticipants, notifyUser } from '../services/notifications'
 
 const router = Router()
 const claimSchema = z.object({ auctionId: z.string().min(1), note: z.string().trim().max(500).optional() })
@@ -57,7 +57,7 @@ router.post('/event/:eventId', requireAuth, async (req: AuthRequest, res) => {
     const duplicate = await db.collection('cardClaims').where('auctionId', '==', auction.id).get(); if (duplicate.docs.some((claim) => claim.data().userId === req.userId!)) return res.status(409).json({ error: 'claim_already_exists' })
     const ref = db.collection('cardClaims').doc(); const claim = { eventId: event.id, groupId: event.data()?.groupId, auctionId: auction.id, cardTitle: auction.data()?.title, userId: req.userId!, note: data.note ?? '', status: 'PENDING', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
     await ref.set(claim)
-    void notifyGroupMembers(String(event.data()?.groupId), { kind: 'CLAIM_NEEDS_VOTES', title: `Verifica richiesta · ${claim.cardTitle}`, message: 'Un giocatore dichiara che la carta è avvenuta: conferma o nega dalla pagina evento.', path: `/events/${event.id}` }, [req.userId!])
+    void notifyEventParticipants(event.id, { kind: 'CLAIM_NEEDS_VOTES', title: `Verifica richiesta · ${claim.cardTitle}`, message: 'Un giocatore dichiara che la carta è avvenuta: conferma o nega dalla pagina evento.', path: `/events/${event.id}` }, [req.userId!])
     return res.status(201).json({ claim: documentData(ref.id, claim) })
   } catch (error: any) { return res.status(400).json({ error: error.message ?? 'claim_failed' }) }
 })
@@ -72,7 +72,7 @@ router.post('/:id/vote', requireAuth, async (req: AuthRequest, res) => {
     const voteRef = ref.collection('votes').doc(req.userId!); const oldVote = await voteRef.get(); const now = new Date().toISOString(); await voteRef.set({ userId: req.userId!, ...data, createdAt: oldVote.data()?.createdAt ?? now, updatedAt: now })
     const votes = await ref.collection('votes').get(); const confirms = votes.docs.filter((vote) => vote.data().vote === 'CONFIRM').length; const denies = votes.docs.filter((vote) => vote.data().vote === 'DENY').length
     let status = 'PENDING'; if (confirms >= 2) status = 'CONFIRMED'; else if (denies >= 2) status = 'DENIED'
-    if (status !== 'PENDING') { await ref.update({ status, resolvedAt: now, updatedAt: now }); if (status === 'CONFIRMED') void rewardClaim(ref, { ...claim, status }); else void notifyUser(String(claim.userId), { kind: 'CLAIM_DENIED', title: 'Carta negata', message: 'Due giocatori hanno negato che l’evento sia avvenuto. Puoi aprire un ricorso.', path: `/events/${claim.eventId}` }) }
+    if (status !== 'PENDING') { await ref.update({ status, resolvedAt: now, updatedAt: now }); if (status === 'CONFIRMED') { void rewardClaim(ref, { ...claim, status }); void notifyEventParticipants(String(claim.eventId), { kind: 'SCORE_UPDATED', title: `Carta confermata · ${claim.cardTitle}`, message: 'La crew ha confermato una carta giocata: classifica e punti aggiornati.', path: `/events/${claim.eventId}` }) } else void notifyUser(String(claim.userId), { kind: 'CLAIM_DENIED', title: 'Carta negata', message: 'Due giocatori hanno negato che l’evento sia avvenuto. Puoi aprire un ricorso.', path: `/events/${claim.eventId}` }) }
     return res.json({ status, confirms, denies })
   } catch (error: any) { return res.status(400).json({ error: error.message ?? 'vote_failed' }) }
 })
