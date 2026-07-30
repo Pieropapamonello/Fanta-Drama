@@ -6,7 +6,7 @@ import { FieldValue } from 'firebase-admin/firestore'
 import { notifyGroupMembers } from '../services/notifications'
 import { createDramaBeat } from '../services/drama-director'
 import { isPlatformAdmin } from '../services/platform-admin'
-import { createEventAuctions, sendAuctionReminder } from '../services/auctions'
+import { createEventAuctions, ensureEventWallet, sendAuctionReminder } from '../services/auctions'
 import { deleteDropboxAsset } from '../services/assets'
 
 const router = Router()
@@ -36,7 +36,7 @@ async function visibleName(userId: string, profile: Record<string, any>) {
 async function participantsForEvent(eventId: string, event: Record<string, unknown>) {
   const [auctions, purchases] = await Promise.all([db.collection('auctions').where('eventId', '==', eventId).get(), db.collection('eventCardPurchases').where('eventId', '==', eventId).get()])
   const memberIds = (event.participantIds as string[] | undefined) ?? []
-  const users = await Promise.all(memberIds.map((userId) => db.collection('users').doc(userId).get()))
+  const [users, wallets] = await Promise.all([Promise.all(memberIds.map((userId) => db.collection('users').doc(userId).get())), Promise.all(memberIds.map((userId) => ensureEventWallet(eventId, userId)))])
   return Promise.all(users.map(async (user, index) => {
     const userId = memberIds[index]; const profile = user.data() ?? {}
     const auctionCards = auctions.docs.filter((auction) => auction.data().ownerId === userId || (auction.data().status === 'OPEN' && auction.data().leaderId === userId)).map((auction) => {
@@ -45,7 +45,8 @@ async function participantsForEvent(eventId: string, event: Record<string, unkno
     })
     const directCards = purchases.docs.filter((purchase) => purchase.data().userId === userId).map((purchase) => { const data = purchase.data(); return { id: purchase.id, title: data.title ?? 'Carta drama', description: data.description ?? '', imageUrl: data.imageUrl ?? '', rarity: data.rarity ?? 'COMMON', state: 'Acquistata' } })
     const cards = [...auctionCards, ...directCards]
-    return { userId, username: await visibleName(userId, profile), avatar: profile.avatar ?? '', crewRole: profile.crewRole ?? 'Jolly', bio: profile.bio ?? '', city: profile.city ?? '', motto: profile.motto ?? '', cards }
+    const wallet = wallets[index].data() ?? {}
+    return { userId, username: await visibleName(userId, profile), avatar: profile.avatar ?? '', crewRole: profile.crewRole ?? 'Jolly', bio: profile.bio ?? '', city: profile.city ?? '', motto: profile.motto ?? '', credits: Math.max(0, Number(wallet.balance ?? 1000) - Number(wallet.reserved ?? 0)), cards }
   }))
 }
 
@@ -70,6 +71,9 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
     const ref = db.collection('events').doc()
     const event = { ...data, description: data.description ?? '', state: 'PRONOSTICI_APERTI', participantIds: [req.userId!], createdBy: req.userId!, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
     await ref.set(event)
+    // Ogni evento e' una partita a se': il creatore parte subito con il suo
+    // portafoglio dedicato, esattamente come chi si iscrivera' in seguito.
+    await ensureEventWallet(ref.id, req.userId!)
     const auctionCount = await createEventAuctions(ref.id, event)
     void announceNewEvent(ref.id, event, req.userId!)
     return res.status(201).json({ event: { ...documentData(ref.id, event), auctionCount } })
@@ -103,6 +107,7 @@ router.post('/:id/join', requireAuth, async (req: AuthRequest, res) => {
   if (!event.exists || (!await groupRole(String(event.data()?.groupId), req.userId!) && !await isPlatformAdmin(req.userId!))) return res.status(404).json({ error: 'event_not_found' })
   if (eventPhase(event.data() as Record<string, unknown>) === 'CONCLUSO') return res.status(409).json({ error: 'event_finished' })
   await ref.update({ participantIds: FieldValue.arrayUnion(req.userId!), updatedAt: new Date().toISOString() })
+  await ensureEventWallet(event.id, req.userId!)
   void notifyGroupMembers(String(event.data()?.groupId), { kind: 'EVENT_JOINED', title: `Nuovo partecipante · ${event.data()?.title}`, message: 'Un membro della crew è entrato nella sfida.', path: `/events/${event.id}` }, [req.userId!])
   return res.json({ ok: true })
 })
@@ -129,8 +134,9 @@ router.get('/:id/leaderboard', requireAuth, async (req: AuthRequest, res) => {
   ])
   const entries = await Promise.all(((eventSnapshot.data()?.participantIds as string[] | undefined) ?? []).map(async (userId) => {
     const user = await db.collection('users').doc(userId).get()
+    const wallet = await ensureEventWallet(eventSnapshot.id, userId)
     const score = scores.docs.find((doc) => doc.data().userId === userId)?.data()
-    return { userId, username: await visibleName(userId, user.data() ?? {}), avatar: user.data()?.avatar ?? '', points: Number(score?.points ?? 0) }
+    return { userId, username: await visibleName(userId, user.data() ?? {}), avatar: user.data()?.avatar ?? '', points: Number(score?.points ?? 0), credits: Math.max(0, Number(wallet.data()?.balance ?? 1000) - Number(wallet.data()?.reserved ?? 0)) }
   }))
   return res.json({ leaderboard: entries.sort((left, right) => right.points - left.points || left.username.localeCompare(right.username, 'it')) })
 })

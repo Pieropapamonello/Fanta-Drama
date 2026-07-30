@@ -7,6 +7,9 @@ const OPENING_BID = 20
 const MIN_INCREMENT = 5
 export const DEFAULT_DIRECT_CARD_PRICE = 100
 
+function eventWalletId(eventId: string, userId: string) { return Buffer.from(`${eventId}\u0000${userId}`).toString('base64url') }
+function eventWalletRef(eventId: string, userId: string) { return db.collection('eventWallets').doc(eventWalletId(eventId, userId)) }
+
 function profileName(value: unknown) { return String(value || 'Un giocatore') }
 function deadlineLabel(value: unknown) { return new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(String(value))) }
 function directPriceFor(card: Record<string, any>) {
@@ -19,6 +22,15 @@ export async function ensureWallet(userId: string) {
   await db.runTransaction(async (transaction) => {
     const wallet = await transaction.get(ref)
     if (!wallet.exists) transaction.set(ref, { userId, balance: INITIAL_CREDITS, reserved: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
+  })
+  return ref.get()
+}
+
+export async function ensureEventWallet(eventId: string, userId: string) {
+  const ref = eventWalletRef(eventId, userId)
+  await db.runTransaction(async (transaction) => {
+    const wallet = await transaction.get(ref)
+    if (!wallet.exists) transaction.set(ref, { eventId, userId, balance: INITIAL_CREDITS, reserved: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
   })
   return ref.get()
 }
@@ -67,9 +79,14 @@ export async function createEventAuctions(eventId: string, event: Record<string,
 }
 
 export async function buyEventCard(auctionId: string, userId: string) {
-  await ensureWallet(userId)
   const auctionRef = db.collection('auctions').doc(auctionId)
-  const walletRef = db.collection('wallets').doc(userId)
+  const preparedAuction = await auctionRef.get()
+  if (!preparedAuction.exists) throw new Error('auction_not_found')
+  const eventId = String(preparedAuction.data()?.eventId ?? '')
+  const eventSnapshot = await db.collection('events').doc(eventId).get()
+  if (!eventSnapshot.exists || new Date(String(eventSnapshot.data()?.endsAt)).getTime() <= Date.now()) throw new Error('direct_purchase_closed')
+  await ensureEventWallet(eventId, userId)
+  const walletRef = eventWalletRef(eventId, userId)
   const purchaseRef = db.collection('eventCardPurchases').doc(Buffer.from(`${auctionId}\u0000${userId}`).toString('base64url'))
   return db.runTransaction(async (transaction) => {
     const [auctionSnapshot, wallet, existing] = await Promise.all([transaction.get(auctionRef), transaction.get(walletRef), transaction.get(purchaseRef)])
@@ -91,7 +108,13 @@ export async function buyEventCard(auctionId: string, userId: string) {
 
 export async function placeBid(auctionId: string, userId: string, amount: number) {
   const auctionRef = db.collection('auctions').doc(auctionId)
-  const walletRef = db.collection('wallets').doc(userId)
+  const preparedAuction = await auctionRef.get()
+  if (!preparedAuction.exists) throw new Error('auction_not_found')
+  const isEventAuction = Boolean(preparedAuction.data()?.eventId) && preparedAuction.data()?.marketScope !== 'GROUP'
+  const eventId = String(preparedAuction.data()?.eventId ?? '')
+  if (isEventAuction) await ensureEventWallet(eventId, userId)
+  else await ensureWallet(userId)
+  const walletRef = isEventAuction ? eventWalletRef(eventId, userId) : db.collection('wallets').doc(userId)
   const result: any = await db.runTransaction(async (transaction) => {
     const [auctionSnapshot, walletSnapshot, profileSnapshot] = await Promise.all([transaction.get(auctionRef), transaction.get(walletRef), transaction.get(db.collection('users').doc(userId))])
     if (!auctionSnapshot.exists) throw new Error('auction_not_found')
@@ -104,7 +127,7 @@ export async function placeBid(auctionId: string, userId: string, amount: number
     if (Number(wallet.balance) - Number(wallet.reserved) + previousOwnBid < amount) throw new Error('insufficient_credits')
     const previousLeaderId = auction.leaderId ? String(auction.leaderId) : null
     const previousBid = Number(auction.currentBid ?? 0)
-    const priorWalletRef = previousLeaderId && previousLeaderId !== userId ? db.collection('wallets').doc(previousLeaderId) : null
+    const priorWalletRef = previousLeaderId && previousLeaderId !== userId ? (isEventAuction ? eventWalletRef(eventId, previousLeaderId) : db.collection('wallets').doc(previousLeaderId)) : null
     const priorWallet = priorWalletRef ? await transaction.get(priorWalletRef) : null
     if (!walletSnapshot.exists) transaction.set(walletRef, { userId, balance: INITIAL_CREDITS, reserved: amount, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
     else transaction.update(walletRef, { reserved: Number(wallet.reserved) - previousOwnBid + amount, updatedAt: new Date().toISOString() })
@@ -131,7 +154,7 @@ export async function finalizeAuction(auctionId: string) {
     if (auction.status !== 'OPEN' || new Date(String(auction.closesAt)).getTime() > Date.now()) return null
     const now = new Date().toISOString()
     if (!auction.leaderId) { transaction.update(ref, { status: 'UNSOLD', finalizedAt: now, updatedAt: now }); return { ...auction, id: snapshot.id, status: 'UNSOLD' } }
-    const walletRef = db.collection('wallets').doc(String(auction.leaderId))
+    const walletRef = auction.eventId && auction.marketScope !== 'GROUP' ? eventWalletRef(String(auction.eventId), String(auction.leaderId)) : db.collection('wallets').doc(String(auction.leaderId))
     const wallet = await transaction.get(walletRef)
     const balance = Number(wallet.data()?.balance ?? INITIAL_CREDITS); const reserved = Number(wallet.data()?.reserved ?? 0); const paid = Number(auction.currentBid)
     transaction.set(walletRef, { userId: auction.leaderId, balance: Math.max(0, balance - paid), reserved: Math.max(0, reserved - paid), updatedAt: now }, { merge: true })
@@ -156,7 +179,7 @@ export async function refreshAuctions() {
 
 export async function auctionsForEvent(eventId: string, userId: string) {
   await refreshAuctions()
-  const wallet = await ensureWallet(userId)
+  const wallet = await ensureEventWallet(eventId, userId)
   const [auctions, purchases] = await Promise.all([db.collection('auctions').where('eventId', '==', eventId).get(), db.collection('eventCardPurchases').where('eventId', '==', eventId).get()])
   const owned = new Set(purchases.docs.filter((purchase) => purchase.data().userId === userId).map((purchase) => String(purchase.data().auctionId)))
   const items: any[] = auctions.docs.map((auction) => ({ ...documentData(auction.id, auction.data() as Record<string, unknown>), purchasedByCurrentUser: owned.has(auction.id) }))

@@ -4,7 +4,7 @@ import { requireAuth, AuthRequest } from '../middleware/auth'
 import { db, documentData, groupRole } from '../services/firebase'
 import { notifyEventParticipants, notifyUser } from '../services/notifications'
 import { isPlatformAdmin } from '../services/platform-admin'
-import { approveKnownEventCard, submitClaimVote } from '../services/claim-voting'
+import { approveKnownEventCard, rewardClaim as rewardEventClaim, submitClaimVote } from '../services/claim-voting'
 
 const router = Router()
 const claimSchema = z.object({ auctionId: z.string().min(1), note: z.string().trim().max(500).optional() })
@@ -91,7 +91,9 @@ router.post('/event/:eventId', requireAuth, async (req: AuthRequest, res) => {
       return value
     })
     if (claim.status === 'CONFIRMED') {
-      await rewardClaim(ref, claim)
+      // La notifica dell'aggiornamento evento viene inviata una sola volta a
+      // tutta la crew poco sotto; evitare qui una seconda notifica al giocatore.
+      await rewardEventClaim(ref, claim)
       void notifyEventParticipants(event.id, { kind: 'SCORE_UPDATED', title: `Carta già verificata · ${claim.cardTitle}`, message: `La carta era già approvata dalla crew: ${claim.spentCredits} punti assegnati automaticamente.`, path: `/events/${event.id}`, actionLabel: 'Vedi classifica' })
     } else {
       const telegramButtons = [[{ text: '✅ Approva', callback_data: `claim:${ref.id}:CONFIRM` }, { text: '❌ Contesta', callback_data: `claim:${ref.id}:DENY` }], [{ text: '🛡 Contatta admin', callback_data: `claim:${ref.id}:APPEAL` }]]
