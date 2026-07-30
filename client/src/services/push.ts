@@ -8,7 +8,8 @@ function workerUrl() {
     authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '',
     projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
     messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
-    appId: import.meta.env.VITE_FIREBASE_APP_ID || ''
+    appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
+    v: '2'
   })
   return `/firebase-push-sw.js?${params.toString()}`
 }
@@ -63,8 +64,8 @@ export async function enableDeviceNotifications() {
 export async function listenToForegroundPush() {
   if (!('Notification' in window) || Notification.permission !== 'granted' || !await isSupported()) return () => undefined
   return onMessage(getMessaging(firebaseApp), (payload) => {
-    const title = payload.notification?.title ?? 'FantaDrama'
-    const body = payload.notification?.body ?? 'Hai un nuovo aggiornamento.'
+    const title = payload.notification?.title ?? payload.data?.title ?? 'FantaDrama'
+    const body = payload.notification?.body ?? payload.data?.body ?? 'Hai un nuovo aggiornamento.'
     void navigator.serviceWorker.ready.then((registration) => registration.showNotification(title, { body, icon: '/icons/fantadrama-icon.svg', data: { path: payload.data?.path ?? '/dashboard' } }))
   })
 }

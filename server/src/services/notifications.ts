@@ -16,6 +16,7 @@ export type NotificationPayload = {
   message: string
   path?: string
   actionLabel?: string
+  telegramButtons?: Array<Array<Record<string, string>>>
   kind: 'EVENT_CREATED' | 'EVENT_CLOSED' | 'EVENT_JOINED' | 'EVENT_CARD_CREATED' | 'SCORE_UPDATED' | 'AUCTION_OPENED' | 'AUCTION_OUTBID' | 'AUCTION_WON' | 'AUCTION_REMINDER' | 'CLAIM_NEEDS_VOTES' | 'CLAIM_CONFIRMED' | 'CLAIM_DENIED' | 'APPEAL_OPENED' | 'APPEAL_DECIDED'
 }
 
@@ -56,14 +57,21 @@ async function sendEmail(email: string, payload: NotificationPayload) {
 async function sendDevicePush(userId: string, payload: NotificationPayload) {
   const subscriptions = await db.collection('pushSubscriptions').where('userId', '==', userId).get()
   if (subscriptions.empty) return { channel: 'device', status: 'pending_permission' }
-  const deliveries = await Promise.all(subscriptions.docs.map(async (subscription) => {
+  const latestByPlatform = new Map<string, FirebaseFirestore.QueryDocumentSnapshot>()
+  subscriptions.docs.forEach((subscription) => {
+    const platform = String(subscription.data().platform ?? 'web')
+    const current = latestByPlatform.get(platform)
+    if (!current || String(subscription.data().updatedAt ?? '') > String(current.data().updatedAt ?? '')) latestByPlatform.set(platform, subscription)
+  })
+  const deliveries = await Promise.all([...latestByPlatform.values()].map(async (subscription) => {
     const token = String(subscription.data().token ?? '')
     if (!token) return 'failed'
     try {
-      await getMessaging(firebaseApp).send({ token, notification: { title: payload.title, body: payload.message }, data: { path: payload.path ?? '/dashboard', url: `${appUrl}${payload.path ?? '/dashboard'}` }, webpush: { fcmOptions: { link: `${appUrl}${payload.path ?? '/dashboard'}` } } })
+      await getMessaging(firebaseApp).send({ token, data: { title: payload.title, body: payload.message, path: payload.path ?? '/dashboard', url: `${appUrl}${payload.path ?? '/dashboard'}` }, webpush: { notification: { title: payload.title, body: payload.message, icon: '/icons/fantadrama-icon.svg' }, fcmOptions: { link: `${appUrl}${payload.path ?? '/dashboard'}` } } })
       return 'sent'
     } catch (error: any) {
       if (String(error?.code ?? '').includes('registration-token-not-registered')) await subscription.ref.delete()
+      console.warn('Device notification failed', { userId, code: error?.code ?? 'unknown' })
       return 'failed'
     }
   }))
@@ -95,7 +103,7 @@ export async function notifyUser(userId: string, payload: NotificationPayload) {
   if (channels.includes('DEVICE')) results.push(await sendDevicePush(userId, payload))
   if (channels.includes('TELEGRAM') && link.chatId) {
     try {
-      await sendTelegramMessage(String(link.chatId), `✨ ${payload.title}\n\n${payload.message}`, payload.path ?? '/dashboard', undefined, payload.actionLabel ?? 'Apri FantaDrama')
+      await sendTelegramMessage(String(link.chatId), `✨ ${payload.title}\n\n${payload.message}`, payload.path ?? '/dashboard', payload.telegramButtons, payload.actionLabel ?? 'Apri FantaDrama')
       results.push({ channel: 'telegram', status: 'sent' })
     } catch (error: any) {
       console.warn('Telegram notification failed', { userId, code: error?.message ?? 'unknown' })

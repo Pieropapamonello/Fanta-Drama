@@ -81,6 +81,9 @@ router.post('/push-subscriptions', requireAuth, async (req: AuthRequest, res) =>
     const existing = await db.collection('pushSubscriptions').where('token', '==', data.token).limit(1).get()
     const ref = existing.empty ? db.collection('pushSubscriptions').doc() : existing.docs[0].ref
     await ref.set({ userId: req.userId!, token: data.token, platform: data.platform ?? 'web', updatedAt: new Date().toISOString() }, { merge: true })
+    const sameDevice = await db.collection('pushSubscriptions').where('userId', '==', req.userId!).get()
+    const stale = sameDevice.docs.filter((item) => item.id !== ref.id && String(item.data().platform ?? 'web') === String(data.platform ?? 'web'))
+    await Promise.all(stale.map((item) => item.ref.delete()))
     return res.json({ ok: true })
   } catch (error: any) { return res.status(400).json({ error: error.message ?? 'invalid_push_subscription' }) }
 })

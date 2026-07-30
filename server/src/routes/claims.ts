@@ -4,6 +4,7 @@ import { requireAuth, AuthRequest } from '../middleware/auth'
 import { db, documentData, groupRole } from '../services/firebase'
 import { notifyEventParticipants, notifyUser } from '../services/notifications'
 import { isPlatformAdmin } from '../services/platform-admin'
+import { approveKnownEventCard, submitClaimVote } from '../services/claim-voting'
 
 const router = Router()
 const claimSchema = z.object({ auctionId: z.string().min(1), note: z.string().trim().max(500).optional() })
@@ -83,54 +84,26 @@ router.post('/event/:eventId', requireAuth, async (req: AuthRequest, res) => {
         if (spentCredits <= 0) throw new Error('invalid_card_cost')
         transaction.update(auctionRef, { playedAt: now, playedBy: req.userId!, playedClaimId: ref.id, updatedAt: now })
       }
-      const value = { eventId: event.id, groupId: event.data()?.groupId, auctionId: auctionSnapshot.id, cardTitle: auction.title, userId: req.userId!, note: data.note ?? '', spentCredits: Math.round(spentCredits), status: 'PENDING', createdAt: now, updatedAt: now }
+      const cardKey = String(auction.cardKey ?? `auction:${auctionSnapshot.id}`)
+      const autoApproved = await approveKnownEventCard(event.id, cardKey)
+      const value = { eventId: event.id, groupId: event.data()?.groupId, auctionId: auctionSnapshot.id, cardKey, cardTitle: auction.title, userId: req.userId!, note: data.note ?? '', spentCredits: Math.round(spentCredits), status: autoApproved ? 'CONFIRMED' : 'PENDING', ...(autoApproved ? { resolvedAt: now, resolvedAtBy: 'known_card_rule', autoApproved: true } : {}), createdAt: now, updatedAt: now }
       transaction.set(ref, value)
       return value
     })
-    // Include the claimant too: the in-app/device notice confirms that the
-    // verification request was really distributed, even in a one-player test.
-    void notifyEventParticipants(event.id, { kind: 'CLAIM_NEEDS_VOTES', title: `Carta giocata · ${claim.cardTitle}`, message: `Una carta da ${claim.spentCredits} punti attende due conferme. Apri l’evento per approvare o contestare.`, path: `/events/${event.id}`, actionLabel: 'Apri verifica carta' })
+    if (claim.status === 'CONFIRMED') {
+      await rewardClaim(ref, claim)
+      void notifyEventParticipants(event.id, { kind: 'SCORE_UPDATED', title: `Carta già verificata · ${claim.cardTitle}`, message: `La carta era già approvata dalla crew: ${claim.spentCredits} punti assegnati automaticamente.`, path: `/events/${event.id}`, actionLabel: 'Vedi classifica' })
+    } else {
+      const telegramButtons = [[{ text: '✅ Approva', callback_data: `claim:${ref.id}:CONFIRM` }, { text: '❌ Contesta', callback_data: `claim:${ref.id}:DENY` }], [{ text: '🛡 Contatta admin', callback_data: `claim:${ref.id}:APPEAL` }]]
+      void notifyEventParticipants(event.id, { kind: 'CLAIM_NEEDS_VOTES', title: `Carta giocata · ${claim.cardTitle}`, message: `Una carta da ${claim.spentCredits} punti attende due conferme. Apri l’evento per approvare o contestare.`, path: `/events/${event.id}`, actionLabel: 'Apri verifica carta', telegramButtons })
+    }
     return res.status(201).json({ claim: documentData(ref.id, claim) })
   } catch (error: any) { return res.status(400).json({ error: error.message ?? 'claim_failed' }) }
 })
 
 router.post('/:id/vote', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const data = voteSchema.parse(req.body)
-    const ref = db.collection('cardClaims').doc(req.params.id)
-    const claimSnapshot = await ref.get()
-    if (!claimSnapshot.exists) return res.status(404).json({ error: 'claim_not_found' })
-    const claim = claimSnapshot.data()!
-    const event = await db.collection('events').doc(String(claim.eventId)).get()
-    if (!event.exists) return res.status(404).json({ error: 'event_not_found' })
-    const platformAdmin = await isPlatformAdmin(req.userId!)
-    const groupAdmin = await groupRole(String(claim.groupId), req.userId!) === 'ADMIN'
-    const participant = ((event.data()?.participantIds as string[] | undefined) ?? []).includes(req.userId!)
-    if (!participant && !platformAdmin && !groupAdmin) return res.status(403).json({ error: 'event_participant_required' })
-    if (claim.userId === req.userId!) return res.status(403).json({ error: 'claimant_cannot_vote' })
-    if (claim.status !== 'PENDING') return res.status(409).json({ error: 'claim_already_resolved' })
-    const voteRef = ref.collection('votes').doc(req.userId!)
-    const oldVote = await voteRef.get()
-    const now = new Date().toISOString()
-    await voteRef.set({ userId: req.userId!, ...data, createdAt: oldVote.data()?.createdAt ?? now, updatedAt: now })
-    const votes = await ref.collection('votes').get()
-    const confirms = votes.docs.filter((vote) => vote.data().vote === 'CONFIRM').length
-    const denies = votes.docs.filter((vote) => vote.data().vote === 'DENY').length
-    // A crew/platform admin may decide immediately. Everyone else needs two
-    // independent player confirmations (or two denials).
-    const status = platformAdmin || groupAdmin ? (data.vote === 'CONFIRM' ? 'CONFIRMED' : 'DENIED') : confirms >= 2 ? 'CONFIRMED' : denies >= 2 ? 'DENIED' : 'PENDING'
-    if (status === 'PENDING') {
-      void notifyEventParticipants(String(claim.eventId), { kind: 'CLAIM_NEEDS_VOTES', title: `Nuova decisione · ${claim.cardTitle}`, message: `${confirms} conferme e ${denies} contestazioni: la carta attende ancora la verifica della crew.`, path: `/events/${claim.eventId}`, actionLabel: 'Apri verifica carta' }, [req.userId!])
-    } else {
-      await ref.update({ status, resolvedAt: now, resolvedAtBy: req.userId!, updatedAt: now })
-      if (status === 'CONFIRMED') {
-        void rewardClaim(ref, { ...claim, spentCredits: claim.spentCredits, status })
-        void notifyEventParticipants(String(claim.eventId), { kind: 'SCORE_UPDATED', title: `Carta confermata · ${claim.cardTitle}`, message: `Carta valida: ${claim.spentCredits} punti assegnati. La classifica è aggiornata.`, path: `/events/${claim.eventId}`, actionLabel: 'Vedi classifica' })
-      } else {
-        void notifyEventParticipants(String(claim.eventId), { kind: 'CLAIM_DENIED', title: `Carta contestata · ${claim.cardTitle}`, message: 'La carta è stata negata. Dalla verifica puoi chiedere l’intervento dell’amministratore.', path: `/events/${claim.eventId}`, actionLabel: 'Apri verifica carta' })
-      }
-    }
-    return res.json({ status, confirms, denies, adminDecision: platformAdmin || groupAdmin })
+    return res.json(await submitClaimVote(req.params.id, req.userId!, voteSchema.parse(req.body).vote))
   } catch (error: any) { return res.status(400).json({ error: error.message ?? 'vote_failed' }) }
 })
 

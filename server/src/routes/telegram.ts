@@ -2,6 +2,8 @@ import { Router } from 'express'
 import { db } from '../services/firebase'
 import { grantPlatformAdmin, isPlatformAdmin, isValidAdminPassword } from '../services/platform-admin'
 import { mergeProfiles } from '../services/profile-merge'
+import { notifyUser } from '../services/notifications'
+import { submitClaimVote } from '../services/claim-voting'
 
 const router = Router()
 const appUrl = 'https://fanta-drama.onrender.com/telegram-miniapp'
@@ -96,7 +98,36 @@ async function sendAdminGroups(chatId: string | number, from: TelegramUser) {
   return telegramApi('sendMessage', { chat_id: chatId, text: lines.length ? `Tutti i gruppi\n\n${lines.join('\n')}` : 'Non ci sono gruppi da mostrare.', reply_markup: { inline_keyboard: [[{ text: 'Console admin', callback_data: 'admin' }]] } })
 }
 
+async function handleClaimAction(chatId: string | number, from: TelegramUser, action: string) {
+  const [, claimId, command] = action.split(':')
+  const user = await registeredUser(from.id)
+  if (!user || !claimId || !command) return sendMenuHint(chatId)
+  if (command === 'APPEAL') {
+    const claim = await db.collection('cardClaims').doc(claimId).get()
+    if (!claim.exists) return telegramApi('sendMessage', { chat_id: chatId, text: 'Questa verifica non esiste più.' })
+    const previous = await db.collection('appeals').where('claimId', '==', claimId).get()
+    if (previous.docs.some((item) => item.data().userId === user.id && item.data().status === 'OPEN')) return telegramApi('sendMessage', { chat_id: chatId, text: 'Hai già chiesto l’intervento dell’amministratore per questa carta.' })
+    const now = new Date().toISOString()
+    await db.collection('appeals').add({ claimId, eventId: claim.data()?.eventId, groupId: claim.data()?.groupId, userId: user.id, message: 'Richiesta inviata direttamente da Telegram.', status: 'OPEN', createdAt: now })
+    await claim.ref.set({ appealCount: Number(claim.data()?.appealCount ?? 0) + 1, latestAppealAt: now, updatedAt: now }, { merge: true })
+    const [group, admins] = await Promise.all([db.collection('groups').doc(String(claim.data()?.groupId)).get(), db.collection('platformAdmins').get()])
+    const adminIds = new Set([...Object.entries((group.data()?.memberRoles ?? {}) as Record<string, string>).filter(([, role]) => role === 'ADMIN').map(([id]) => id), ...admins.docs.map((admin) => admin.id)])
+    await Promise.allSettled([...adminIds].map((id) => notifyUser(id, { kind: 'APPEAL_OPENED', title: 'Intervento richiesto su una carta', message: `Telegram richiede un controllo per ${claim.data()?.cardTitle}.`, path: '/admin/console', actionLabel: 'Apri console admin' })))
+    return telegramApi('sendMessage', { chat_id: chatId, text: 'Richiesta inviata all’amministratore. Riceverai un aggiornamento quando verrà presa una decisione.' })
+  }
+  try {
+    const result = await submitClaimVote(claimId, user.id, command === 'CONFIRM' ? 'CONFIRM' : 'DENY')
+    const text = result.alreadyVoted ? 'Avevi già registrato questa decisione.' : result.status === 'CONFIRMED' ? '✅ Carta confermata: punti assegnati e crew avvisata.' : result.status === 'DENIED' ? '❌ Carta contestata: la crew è stata avvisata.' : `${command === 'CONFIRM' ? '✅ Conferma' : '❌ Contestazione'} registrata: ${result.confirms} conferme e ${result.denies} contestazioni.`
+    return telegramApi('sendMessage', { chat_id: chatId, text, reply_markup: { inline_keyboard: [[{ text: 'Apri verifica carta', web_app: { url: `${appUrl.replace('/telegram-miniapp', '')}/events/${result.claim.eventId}` } }]] } })
+  } catch (error: any) {
+    const code = String(error?.message ?? '')
+    const text = code === 'claimant_cannot_vote' ? 'Non puoi approvare la tua stessa carta.' : code === 'claim_already_resolved' ? 'Questa carta è già stata risolta.' : 'Non riesco a registrare questa decisione.'
+    return telegramApi('sendMessage', { chat_id: chatId, text })
+  }
+}
+
 async function handleAction(chatId: string | number, from: TelegramUser, action: string) {
+  if (action.startsWith('claim:')) return handleClaimAction(chatId, from, action)
   if (action === 'menu') return sendMenu(chatId, from.first_name, await isTelegramAdmin(from.id))
   const user = await registeredUser(from.id)
   if (!user) return sendMenuHint(chatId)

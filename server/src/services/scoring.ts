@@ -20,8 +20,11 @@ export async function closeAndScoreEvent(eventId: string, source: 'manual' | 'au
   const liveUpdate = await createDramaBeat({ event: { title: String(event.title), description: String(event.description ?? '') }, phase: 'CLOSED', playersWithPoints: [...totals.values()].filter(value => value > 0).length })
   await eventRef.set({ liveUpdate, liveUpdateAt: now }, { merge: true })
   const winner = [...totals.entries()].sort((a, b) => b[1] - a[1])[0]
+  const winnerProfile = winner ? await db.collection('users').doc(winner[0]).get() : null
+  const winnerName = winnerProfile?.data()?.username ?? 'Giocatore'
+  if (winner) await eventRef.set({ winnerId: winner[0], winnerName, winnerPoints: winner[1] }, { merge: true })
   await Promise.allSettled([...totals.entries()].filter(([, points]) => points > 0).map(([userId, points]) => notifyUser(userId, { kind: 'SCORE_UPDATED', title: `Punteggio aggiornato · ${event.title}`, message: `${liveUpdate} Hai chiuso con ${points} punti.`, path: `/events/${eventId}` })))
-  await notifyGroupMembers(String(event.groupId), { kind: 'EVENT_CLOSED', title: `Evento concluso · ${event.title}`, message: winner ? `${liveUpdate} Vince la serata il giocatore con ${winner[1]} punti.` : liveUpdate, path: `/events/${eventId}` })
+  await notifyGroupMembers(String(event.groupId), { kind: 'EVENT_CLOSED', title: `Evento concluso · ${event.title}`, message: winner ? `${liveUpdate} Vince la serata ${winnerName} con ${winner[1]} punti.` : liveUpdate, path: `/events/${eventId}` })
   return { alreadyClosed: false, totals, event }
 }
 

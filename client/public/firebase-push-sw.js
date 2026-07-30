@@ -8,12 +8,8 @@ if (config.apiKey && config.projectId && config.messagingSenderId && config.appI
   importScripts('https://www.gstatic.com/firebasejs/11.0.2/firebase-app-compat.js')
   importScripts('https://www.gstatic.com/firebasejs/11.0.2/firebase-messaging-compat.js')
   firebase.initializeApp(config)
-  firebase.messaging().onBackgroundMessage((payload) => {
-    const title = payload.notification?.title || 'FantaDrama'
-    const path = payload.data?.path || '/dashboard'
-    const options = { body: payload.notification?.body || 'Hai un nuovo aggiornamento.', icon: '/icons/fantadrama-icon.svg', data: { url: payload.data?.url || new URL(path, self.location.origin).href } }
-    self.registration.showNotification(title, options)
-  })
+  // The server supplies a Web Push notification payload. Let FCM display it
+  // once instead of showing a second copy from a background callback.
 }
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
