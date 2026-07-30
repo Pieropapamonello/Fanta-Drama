@@ -31,7 +31,7 @@ function channelsFromLegacy(preference: string): NotificationChannel[] {
 
 export default function ProfileSetup() {
   const navigate = useNavigate()
-  const { register, handleSubmit, reset, setValue, watch } = useForm<ProfileForm>({ defaultValues: { avatar: avatars[0].value, crewRole: 'Jolly', notificationChannels: ['DEVICE', 'TELEGRAM', 'EMAIL'] } })
+  const { register, handleSubmit, reset, setValue, watch, getValues } = useForm<ProfileForm>({ defaultValues: { avatar: avatars[0].value, crewRole: 'Jolly', notificationChannels: ['DEVICE', 'TELEGRAM', 'EMAIL'] } })
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState('')
@@ -140,8 +140,17 @@ export default function ProfileSetup() {
     } finally { setIsTestingPush(false) }
   }
 
-  const toggleChannel = (channel: NotificationChannel) => {
-    setValue('notificationChannels', notificationChannels.includes(channel) ? notificationChannels.filter((item) => item !== channel) : [...notificationChannels, channel], { shouldDirty: true })
+  const toggleChannel = async (channel: NotificationChannel) => {
+    const next = notificationChannels.includes(channel) ? notificationChannels.filter((item) => item !== channel) : [...notificationChannels, channel]
+    setValue('notificationChannels', next, { shouldDirty: true })
+    if (!profile?.profileCompleted) return
+    try {
+      const response = await api.put('/profile/me', { ...getValues(), notificationChannels: next })
+      setProfile(response.data.user)
+      setContactMessage('Preferenze notifiche salvate.')
+    } catch {
+      setContactMessage('Non riesco a salvare le preferenze ora. Riprova.')
+    }
   }
 
   if (isLoading) return <div className="empty-state">Sto preparando il tuo profilo…</div>
@@ -157,7 +166,7 @@ export default function ProfileSetup() {
     <section className="connection-section"><div className="profile-section-title"><Sparkles size={17} /><div><strong>Account e notifiche</strong><span>Collega i canali che vuoi usare</span></div></div><div className="connection-grid">
       <div className={`connection-card ${profile?.connections?.email ? 'is-connected' : ''}`}><b>✉ E-mail</b>{profile?.connections?.email ? <><span>{profile.email}</span><small>Collegata</small></> : <><input className="input" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="nome@email.it" type="email" /><input className="input" value={emailPassword} onChange={(event) => setEmailPassword(event.target.value)} placeholder="Crea una password" type="password" /><button type="button" className="btn btn-ghost" onClick={connectEmail} disabled={isLinkingEmail}>{isLinkingEmail ? 'Collegamento…' : 'Collega e-mail'}</button></>}</div>
       <div className={`connection-card ${profile?.connections?.telegram ? 'is-connected' : ''}`}><b>✈ Telegram</b>{profile?.connections?.telegram ? <><span>@{profile.username || 'FantaDrama'}</span><small>Collegato</small></> : <><span>Ricevi gli aggiornamenti direttamente dal bot.</span><button type="button" className="btn btn-ghost" onClick={connectTelegram}>Collega Telegram</button></>}</div>
-    </div><div className="device-push-card"><BellRing size={18} /><div><strong>Avvisi sul telefono</strong><span>Notifiche push di sistema, anche quando FantaDrama è chiusa.</span></div><div className="device-push-actions"><button type="button" className="btn btn-ghost" onClick={() => void enablePush()} disabled={isEnablingPush}>{isEnablingPush ? 'Attivazione…' : 'Attiva avvisi'}</button><button type="button" className="btn btn-ghost" onClick={() => void testPush()} disabled={isTestingPush}>{isTestingPush ? 'Invio test…' : 'Invia test'}</button></div>{pushMessage && <small role="status">{pushMessage}</small>}</div><div className="notification-choice"><strong>Come vuoi ricevere gli avvisi?</strong><span>Puoi selezionare più canali. Il centro notifiche nell’app conserva sempre lo storico.</span><div><button type="button" className={notificationChannels.includes('DEVICE') ? 'is-selected' : ''} onClick={() => toggleChannel('DEVICE')}>Avvisi sul telefono</button><button type="button" className={notificationChannels.includes('TELEGRAM') ? 'is-selected' : ''} onClick={() => toggleChannel('TELEGRAM')} disabled={!profile?.connections?.telegram}>Telegram</button><button type="button" className={notificationChannels.includes('EMAIL') ? 'is-selected' : ''} onClick={() => toggleChannel('EMAIL')} disabled={!profile?.connections?.email}>E-mail</button></div></div>{contactMessage && <p className="contact-message" role="status">{contactMessage}</p>}</section>
+    </div><div className="device-push-card"><BellRing size={18} /><div><strong>Avvisi sul telefono</strong><span>Notifiche push di sistema, anche quando FantaDrama è chiusa.</span></div><div className="device-push-actions"><button type="button" className="btn btn-ghost" onClick={() => void enablePush()} disabled={isEnablingPush}>{isEnablingPush ? 'Attivazione…' : 'Attiva avvisi'}</button><button type="button" className="btn btn-ghost" onClick={() => void testPush()} disabled={isTestingPush}>{isTestingPush ? 'Invio test…' : 'Invia test'}</button></div>{pushMessage && <small role="status">{pushMessage}</small>}</div><div className="notification-choice"><strong>Come vuoi ricevere gli avvisi?</strong><span>Puoi selezionare più canali: ogni modifica viene salvata subito. Il centro notifiche nell’app conserva sempre lo storico.</span><div><button type="button" className={notificationChannels.includes('DEVICE') ? 'is-selected' : ''} onClick={() => void toggleChannel('DEVICE')}>Avvisi sul telefono</button><button type="button" className={notificationChannels.includes('TELEGRAM') ? 'is-selected' : ''} onClick={() => void toggleChannel('TELEGRAM')} disabled={!profile?.connections?.telegram}>Telegram</button><button type="button" className={notificationChannels.includes('EMAIL') ? 'is-selected' : ''} onClick={() => void toggleChannel('EMAIL')} disabled={!profile?.connections?.email}>E-mail</button></div></div>{contactMessage && <p className="contact-message" role="status">{contactMessage}</p>}</section>
     {error && <p className="profile-error" role="alert">{error}</p>}
     <button className="btn profile-save" disabled={isSaving}>{isSaving ? 'Salvataggio in corso…' : 'Entra nella drama room'}</button>
   </form>

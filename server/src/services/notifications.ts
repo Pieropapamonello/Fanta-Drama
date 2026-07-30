@@ -97,9 +97,15 @@ export async function notifyUser(userId: string, payload: NotificationPayload) {
     try {
       await sendTelegramMessage(String(link.chatId), `✨ ${payload.title}\n\n${payload.message}`, payload.path ?? '/dashboard', undefined, payload.actionLabel ?? 'Apri FantaDrama')
       results.push({ channel: 'telegram', status: 'sent' })
-    } catch { results.push({ channel: 'telegram', status: 'failed' }) }
+    } catch (error: any) {
+      console.warn('Telegram notification failed', { userId, code: error?.message ?? 'unknown' })
+      results.push({ channel: 'telegram', status: 'failed' })
+    }
+  } else if (channels.includes('TELEGRAM')) {
+    results.push({ channel: 'telegram', status: 'not_connected' })
   }
   if (channels.includes('EMAIL') && user.email) results.push(await sendEmail(String(user.email), payload))
+  else if (channels.includes('EMAIL')) results.push({ channel: 'email', status: 'not_connected' })
   await db.collection('notifications').add({ userId, ...payload, preference, channels, deliveries: results, createdAt: new Date().toISOString() })
   return results
 }
