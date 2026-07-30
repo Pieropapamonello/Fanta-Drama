@@ -87,7 +87,9 @@ router.post('/event/:eventId', requireAuth, async (req: AuthRequest, res) => {
       transaction.set(ref, value)
       return value
     })
-    void notifyEventParticipants(event.id, { kind: 'CLAIM_NEEDS_VOTES', title: `Carta giocata · ${claim.cardTitle}`, message: `Una carta da ${claim.spentCredits} punti attende due conferme. Apri l’evento per approvare o contestare.`, path: `/events/${event.id}`, actionLabel: 'Apri verifica carta' }, [req.userId!])
+    // Include the claimant too: the in-app/device notice confirms that the
+    // verification request was really distributed, even in a one-player test.
+    void notifyEventParticipants(event.id, { kind: 'CLAIM_NEEDS_VOTES', title: `Carta giocata · ${claim.cardTitle}`, message: `Una carta da ${claim.spentCredits} punti attende due conferme. Apri l’evento per approvare o contestare.`, path: `/events/${event.id}`, actionLabel: 'Apri verifica carta' })
     return res.status(201).json({ claim: documentData(ref.id, claim) })
   } catch (error: any) { return res.status(400).json({ error: error.message ?? 'claim_failed' }) }
 })
@@ -117,7 +119,9 @@ router.post('/:id/vote', requireAuth, async (req: AuthRequest, res) => {
     // A crew/platform admin may decide immediately. Everyone else needs two
     // independent player confirmations (or two denials).
     const status = platformAdmin || groupAdmin ? (data.vote === 'CONFIRM' ? 'CONFIRMED' : 'DENIED') : confirms >= 2 ? 'CONFIRMED' : denies >= 2 ? 'DENIED' : 'PENDING'
-    if (status !== 'PENDING') {
+    if (status === 'PENDING') {
+      void notifyEventParticipants(String(claim.eventId), { kind: 'CLAIM_NEEDS_VOTES', title: `Nuova decisione · ${claim.cardTitle}`, message: `${confirms} conferme e ${denies} contestazioni: la carta attende ancora la verifica della crew.`, path: `/events/${claim.eventId}`, actionLabel: 'Apri verifica carta' }, [req.userId!])
+    } else {
       await ref.update({ status, resolvedAt: now, resolvedAtBy: req.userId!, updatedAt: now })
       if (status === 'CONFIRMED') {
         void rewardClaim(ref, { ...claim, spentCredits: claim.spentCredits, status })
