@@ -14,7 +14,7 @@ const schema = z.object({
   title: z.string().trim().min(3).max(100), description: z.string().trim().min(12).max(500),
   rarity: z.enum(['COMMON', 'UNCOMMON', 'RARE', 'EPIC', 'LEGENDARY', 'MYTHIC']).optional(),
   type: z.enum(['YES_NO', 'PICK_CHARACTER', 'MULTI_CHOICE', 'NUMBER', 'RANGE', 'TIME', 'TEXT', 'FIRST_ACTION', 'ORDER']).optional(),
-  imageUrl: z.string().url().max(2048), imageStoragePath: z.string().max(1024).optional(), eventId: z.string().min(1).optional(),
+  imageUrl: z.string().url().max(2048), imageStoragePath: z.string().max(1024).optional(), imageSource: z.enum(['AI', 'UPLOAD', 'BASE']).optional(), eventId: z.string().min(1).optional(),
   directPrice: z.number().int().min(1).max(1_000_000).optional()
 })
 const interestSchema = z.object({ interested: z.boolean() })
@@ -55,7 +55,7 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
     // event-only cards. This lets two crews tell different stories safely.
     if (!data.eventId && !sameTitle.empty) return res.status(409).json({ error: 'card_title_already_exists' })
     if (!data.eventId && !sameDescription.empty) return res.status(409).json({ error: 'card_description_already_exists' })
-    if (!data.eventId && !sameImage.empty) return res.status(409).json({ error: 'card_image_already_exists' })
+    if (!data.eventId && data.imageSource !== 'BASE' && !sameImage.empty) return res.status(409).json({ error: 'card_image_already_exists' })
     let event: any = null
     if (data.eventId) {
       const snapshot = await db.collection('events').doc(data.eventId).get()
@@ -70,7 +70,7 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
     }
     const profile = await db.collection('users').doc(req.userId!).get()
     const ref = db.collection('cardCatalog').doc()
-    const card = { ...data, directPrice: data.directPrice ?? DEFAULT_DIRECT_CARD_PRICE, rarity: data.rarity ?? 'COMMON', type: data.type ?? 'YES_NO', status: 'APPROVED', scope: data.eventId ? 'EVENT' : 'GLOBAL', creatorId: req.userId!, creatorName: profile.data()?.username ?? 'Giocatore', normalizedTitle, normalizedDescription, createdAt: new Date().toISOString(), autoApprovedAt: new Date().toISOString() }
+    const card = { ...data, imageSource: data.imageSource ?? 'AI', directPrice: data.directPrice ?? DEFAULT_DIRECT_CARD_PRICE, rarity: data.rarity ?? 'COMMON', type: data.type ?? 'YES_NO', status: 'APPROVED', scope: data.eventId ? 'EVENT' : 'GLOBAL', creatorId: req.userId!, creatorName: profile.data()?.username ?? 'Giocatore', normalizedTitle, normalizedDescription, createdAt: new Date().toISOString(), autoApprovedAt: new Date().toISOString() }
     await ref.set(card)
     if (event) {
       await createEventCardAuction(event.id, event.data() as Record<string, unknown>, ref.id, card)

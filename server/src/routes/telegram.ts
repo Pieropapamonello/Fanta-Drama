@@ -177,8 +177,8 @@ router.post('/webhook', async (req, res) => {
   try {
     if (callback?.message?.chat?.id && callback.from?.id) {
       await rememberLink(callback.from, callback.message.chat.id)
-      if (callback.id) await telegramApi('answerCallbackQuery', { callback_query_id: callback.id })
       await handleAction(callback.message.chat.id, callback.from, callback.data || 'menu')
+      if (callback.id) await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Decisione registrata: controlla il messaggio del bot.', show_alert: false })
       return res.sendStatus(200)
     }
     const message = update.message

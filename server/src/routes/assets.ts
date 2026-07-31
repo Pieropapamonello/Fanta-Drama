@@ -1,8 +1,9 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import { requireAuth, AuthRequest } from '../middleware/auth'
-import { generateImageAsset, uploadAvatarAsset } from '../services/assets'
-import { starterAvatars } from '../data/starter-content'
+import { generateImageAsset, uploadAvatarAsset, uploadImageAsset } from '../services/assets'
+import { starterAvatars, starterCards } from '../data/starter-content'
+import { db } from '../services/firebase'
 
 const router = Router()
 const generationSchema = z.object({ kind: z.enum(['CARD', 'EVENT', 'AVATAR']), description: z.string().trim().min(12).max(600) })
@@ -25,6 +26,24 @@ router.post('/generate', requireAuth, async (req: AuthRequest, res) => {
 router.post('/avatar-upload', requireAuth, async (req: AuthRequest, res) => {
   try { return res.status(201).json({ imageUrl: await uploadAvatarAsset(req.userId!, uploadSchema.parse(req.body).dataUrl) }) }
   catch (error: any) { return res.status(400).json({ error: error.message ?? 'avatar_upload_failed' }) }
+})
+
+router.post('/upload', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const data = z.object({ kind: z.enum(['CARD', 'EVENT']), dataUrl: z.string().min(32).max(3_500_000) }).parse(req.body)
+    return res.status(201).json(await uploadImageAsset(req.userId!, data.kind, data.dataUrl))
+  } catch (error: any) { return res.status(400).json({ error: error.message ?? 'image_upload_failed' }) }
+})
+
+router.get('/base-images', requireAuth, async (req, res) => {
+  const kind = req.query.kind === 'EVENT' ? 'EVENT' : 'CARD'
+  const catalog = await db.collection('cardCatalog').orderBy('createdAt', 'desc').limit(80).get()
+  const images = [
+    ...starterCards.filter((card) => Boolean(card.imageUrl)).map((card) => ({ id: `starter:${card.slug}`, title: card.title, imageUrl: card.imageUrl })),
+    ...catalog.docs.filter((card) => Boolean(card.data().imageUrl) && !card.data().eventId).map((card) => ({ id: `catalog:${card.id}`, title: String(card.data().title ?? 'Illustrazione FantaDrama'), imageUrl: String(card.data().imageUrl) }))
+  ]
+  const unique = [...new Map(images.map((image) => [image.imageUrl, image])).values()].slice(0, kind === 'EVENT' ? 24 : 48)
+  return res.json({ images: unique })
 })
 
 router.get('/starter-avatars', requireAuth, async (_req, res) => {

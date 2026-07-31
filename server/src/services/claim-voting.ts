@@ -27,6 +27,21 @@ export async function rewardClaim(claimRef: FirebaseFirestore.DocumentReference,
   await db.collection('scores').doc(`${claim.userId}_${claim.eventId}`).set({ userId: claim.userId, eventId: claim.eventId, groupId: claim.groupId, points: total, updatedAt: new Date().toISOString() }, { merge: true })
 }
 
+async function confirmMatchingClaims(sourceRef: FirebaseFirestore.DocumentReference, sourceClaim: Record<string, unknown>) {
+  const sameEvent = await db.collection('cardClaims').where('eventId', '==', String(sourceClaim.eventId)).get()
+  const matching = sameEvent.docs.filter((item) => item.id !== sourceRef.id && item.data().status === 'PENDING' && String(item.data().cardKey ?? '') === String(sourceClaim.cardKey ?? ''))
+  if (!matching.length) return 0
+  const now = new Date().toISOString()
+  const remaining = [...matching]
+  while (remaining.length) {
+    const batch = db.batch()
+    remaining.splice(0, 350).forEach((item) => batch.update(item.ref, { status: 'CONFIRMED', resolvedAt: now, resolvedAtBy: 'same_card_rule', autoApproved: true, sourceClaimId: sourceRef.id, updatedAt: now }))
+    await batch.commit()
+  }
+  await Promise.all(matching.map((item) => rewardClaim(item.ref, { ...item.data(), status: 'CONFIRMED' })))
+  return matching.length
+}
+
 export async function submitClaimVote(claimId: string, userId: string, vote: 'CONFIRM' | 'DENY') {
   const ref = db.collection('cardClaims').doc(claimId)
   const initial = await ref.get()
@@ -69,9 +84,11 @@ export async function submitClaimVote(claimId: string, userId: string, vote: 'CO
   if (!outcome.changed) return { ...outcome, alreadyVoted: true }
   if (outcome.status === 'CONFIRMED') {
     await rewardClaim(ref, outcome.claim)
-    await notifyEventParticipants(String(outcome.claim.eventId), { kind: 'SCORE_UPDATED', title: `Carta confermata · ${outcome.claim.cardTitle}`, message: `Carta valida: ${outcome.claim.spentCredits} punti assegnati. La classifica è aggiornata.`, path: `/events/${outcome.claim.eventId}`, actionLabel: 'Vedi classifica' })
+    const matchingClaims = await confirmMatchingClaims(ref, outcome.claim)
+    const awarded = matchingClaims + 1
+    await notifyEventParticipants(String(outcome.claim.eventId), { kind: 'SCORE_UPDATED', title: `Carta confermata - ${outcome.claim.cardTitle}`, message: awarded > 1 ? `Carta valida per ${awarded} giocatori: punti assegnati automaticamente e classifica aggiornata.` : `Carta valida: ${outcome.claim.spentCredits} punti assegnati. La classifica e aggiornata.`, path: `/events/${outcome.claim.eventId}`, actionLabel: 'Vedi classifica' })
   } else if (outcome.status === 'DENIED') {
-    await notifyEventParticipants(String(outcome.claim.eventId), { kind: 'CLAIM_DENIED', title: `Carta contestata · ${outcome.claim.cardTitle}`, message: 'La carta è stata negata. Dalla verifica puoi chiedere l’intervento dell’amministratore.', path: `/events/${outcome.claim.eventId}`, actionLabel: 'Apri verifica carta' })
+    await notifyEventParticipants(String(outcome.claim.eventId), { kind: 'CLAIM_DENIED', title: `Carta contestata - ${outcome.claim.cardTitle}`, message: "La carta e stata negata. Dalla verifica puoi chiedere l'intervento dell'amministratore.", path: `/events/${outcome.claim.eventId}`, actionLabel: 'Apri verifica carta' })
   }
   return { ...outcome, adminDecision: platformAdmin || groupAdmin }
 }
@@ -82,5 +99,5 @@ export async function approveKnownEventCard(eventId: string, cardKey: string) {
 }
 
 export async function notifyClaimantConfirmed(claim: Record<string, unknown>) {
-  await notifyUser(String(claim.userId), { kind: 'CLAIM_CONFIRMED', title: 'Carta giocata confermata', message: `La carta vale ${claim.spentCredits} punti: la tua classifica si è aggiornata.`, path: `/events/${claim.eventId}` })
+  await notifyUser(String(claim.userId), { kind: 'CLAIM_CONFIRMED', title: 'Carta giocata confermata', message: `La carta vale ${claim.spentCredits} punti: la tua classifica si e aggiornata.`, path: `/events/${claim.eventId}` })
 }

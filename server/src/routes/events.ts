@@ -10,7 +10,7 @@ import { createEventAuctions, ensureEventWallet, sendAuctionReminder } from '../
 import { deleteDropboxAsset } from '../services/assets'
 
 const router = Router()
-const schema = z.object({ title: z.string().trim().min(1).max(120), description: z.string().trim().max(1000).optional(), startsAt: z.string().datetime(), endsAt: z.string().datetime(), groupId: z.string().min(1), acquisitionMode: z.enum(['AUCTION', 'DIRECT']).default('AUCTION'), cardKeys: z.array(z.string().regex(/^(starter|custom):[a-zA-Z0-9_-]+$/)).min(1).max(150), closePredictionsAt: z.string().datetime().optional(), imageUrl: z.string().url().max(2048).optional() })
+const schema = z.object({ title: z.string().trim().min(1).max(120), description: z.string().trim().max(1000).optional(), startsAt: z.string().datetime(), endsAt: z.string().datetime(), groupId: z.string().min(1), acquisitionMode: z.enum(['AUCTION', 'DIRECT']).default('AUCTION'), cardKeys: z.array(z.string().regex(/^(starter|custom):[a-zA-Z0-9_-]+$/)).min(1).max(150), closePredictionsAt: z.string().datetime().optional(), imageUrl: z.string().url().max(2048).optional(), imageStoragePath: z.string().max(1024).optional() })
 
 function eventPhase(event: Record<string, unknown>) {
   // Dates are the source of truth. A missed background tick must never leave
@@ -123,7 +123,8 @@ router.delete('/:id', requireAuth, async (req: AuthRequest, res) => {
   ])
   const refs = [ref, ...auctions.docs.map(x => x.ref), ...purchases.docs.map(x => x.ref), ...predictions.docs.map(x => x.ref), ...scores.docs.map(x => x.ref), ...claims.docs.map(x => x.ref), ...eventCards.docs.map(x => x.ref)]
   while (refs.length) { const batch = db.batch(); refs.splice(0, 400).forEach(item => batch.delete(item)); await batch.commit() }
-  await Promise.allSettled(eventCards.docs.map(card => deleteDropboxAsset(typeof card.data().imageStoragePath === 'string' ? card.data().imageStoragePath : undefined)))
+  const eventImageStoragePath = event.data()?.imageStoragePath
+  await Promise.allSettled([deleteDropboxAsset(typeof eventImageStoragePath === 'string' ? eventImageStoragePath : undefined), ...eventCards.docs.map(card => deleteDropboxAsset(typeof card.data().imageStoragePath === 'string' ? card.data().imageStoragePath : undefined))])
   return res.json({ ok: true })
 })
 

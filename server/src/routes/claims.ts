@@ -91,11 +91,18 @@ router.post('/event/:eventId', requireAuth, async (req: AuthRequest, res) => {
       return value
     })
     if (claim.status === 'CONFIRMED') {
-      // La notifica dell'aggiornamento evento viene inviata una sola volta a
-      // tutta la crew poco sotto; evitare qui una seconda notifica al giocatore.
+      // The crew already validated this card occurrence. Tell only the player
+      // who just used their own copy, otherwise every additional copy would
+      // create the same group alert again.
       await rewardEventClaim(ref, claim)
-      void notifyEventParticipants(event.id, { kind: 'SCORE_UPDATED', title: `Carta già verificata · ${claim.cardTitle}`, message: `La carta era già approvata dalla crew: ${claim.spentCredits} punti assegnati automaticamente.`, path: `/events/${event.id}`, actionLabel: 'Vedi classifica' })
+      void notifyUser(req.userId!, { kind: 'CLAIM_CONFIRMED', title: `Carta gia verificata - ${claim.cardTitle}`, message: `La carta era gia approvata dalla crew: ${claim.spentCredits} punti assegnati automaticamente.`, path: `/events/${event.id}`, actionLabel: 'Vedi classifica' })
     } else {
+      // Direct purchase lets several friends play their own copy. Keep just
+      // one pending alert for the shared occurrence; its final vote resolves
+      // every matching played copy in claim-voting.ts.
+      const pendingClaims = await db.collection('cardClaims').where('eventId', '==', event.id).get()
+      const hasSamePending = pendingClaims.docs.some((item) => item.id !== ref.id && item.data()?.status === 'PENDING' && String(item.data()?.cardKey ?? '') === String(claim.cardKey))
+      if (hasSamePending) return res.status(201).json({ claim: documentData(ref.id, claim), mergedWithExistingVerification: true })
       const telegramButtons = [[{ text: '✅ Approva', callback_data: `claim:${ref.id}:CONFIRM` }, { text: '❌ Contesta', callback_data: `claim:${ref.id}:DENY` }], [{ text: '🛡 Contatta admin', callback_data: `claim:${ref.id}:APPEAL` }]]
       void notifyEventParticipants(event.id, { kind: 'CLAIM_NEEDS_VOTES', title: `Carta giocata · ${claim.cardTitle}`, message: `Una carta da ${claim.spentCredits} punti attende due conferme. Apri l’evento per approvare o contestare.`, path: `/events/${event.id}`, actionLabel: 'Apri verifica carta', telegramButtons })
     }

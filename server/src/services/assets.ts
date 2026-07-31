@@ -324,11 +324,15 @@ export async function generateSharedStarterAsset(kind: AssetKind, key: string, d
 }
 
 export async function uploadAvatarAsset(userId: string, dataUrl: string) {
+  return (await uploadImageAsset(userId, 'AVATAR', dataUrl)).imageUrl
+}
+
+export async function uploadImageAsset(userId: string, kind: AssetKind, dataUrl: string) {
   const match = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl)
   if (!match) throw new Error('invalid_image_upload')
   const buffer = Buffer.from(match[2], 'base64')
   if (buffer.length > 2_500_000) throw new Error('image_too_large')
-  return (await saveToStorage(userId, 'AVATAR', buffer, match[1])).imageUrl
+  return saveToStorage(userId, kind, buffer, match[1])
 }
 
 export async function deleteDropboxAsset(storagePath?: string) {

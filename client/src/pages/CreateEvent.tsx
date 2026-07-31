@@ -7,7 +7,7 @@ import api from '../services/api'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import ImageForge from '../components/ImageForge'
 
-const schema = z.object({ title: z.string().min(1), description: z.string().optional(), startsAt: z.string().min(1), endsAt: z.string().min(1), groupId: z.string().min(1), acquisitionMode: z.enum(['AUCTION', 'DIRECT']), imageUrl: z.string().optional() })
+const schema = z.object({ title: z.string().min(1), description: z.string().optional(), startsAt: z.string().min(1), endsAt: z.string().min(1), groupId: z.string().min(1), acquisitionMode: z.enum(['AUCTION', 'DIRECT']), imageUrl: z.string().optional(), imageStoragePath: z.string().optional() })
 type EventForm = z.infer<typeof schema>
 const keyFor = (card: any) => card.catalogCardId ? `custom:${card.catalogCardId}` : `starter:${card.slug}`
 
@@ -54,7 +54,7 @@ export default function CreateEvent() {
     <section className="purchase-mode-picker"><div><p className="eyebrow">Come si comprano le carte?</p><h3>Modalità mercato</h3></div><div><label className={mode === 'AUCTION' ? 'is-selected' : ''}><input type="radio" value="AUCTION" {...register('acquisitionMode')} /><Gavel /><span><b>Asta esclusiva</b><small>Una sola copia: la carta va a chi offre più crediti.</small></span></label><label className={mode === 'DIRECT' ? 'is-selected' : ''}><input type="radio" value="DIRECT" {...register('acquisitionMode')} /><ShoppingBag /><span><b>Acquisto diretto</b><small>Più utenti possono acquistare la stessa carta per questo evento.</small></span></label></div></section>
     <section className="event-card-picker-head"><div><p className="eyebrow">Mazzo dell’evento</p><h3>Scegli le carte da generare</h3><p>Le carte acquistate saranno valide soltanto per questo evento.</p></div><button type="button" className="btn btn-ghost" onClick={() => setSelected(selected.size === cards.length ? new Set() : new Set(cards.map(keyFor)))}>{selected.size === cards.length ? 'Deseleziona tutte' : 'Seleziona tutte'}</button></section>
     {cardSection('Carte comuni', common)}{cardSection('Carte create dagli utenti', community)}
-    <ImageForge kind="EVENT" imageUrl={watch('imageUrl')} onChange={(url) => setValue('imageUrl', url)} />
+    <ImageForge kind="EVENT" imageUrl={watch('imageUrl')} onChange={(url, storagePath) => { setValue('imageUrl', url); setValue('imageStoragePath', storagePath) }} />
     {!loadingOptions && !groups.length && <p className="profile-error">Solo chi amministra una crew può creare un evento. Crea una crew oppure chiedi all’amministratore del gruppo.</p>}
     {error && <p className="profile-error">{error}</p>}
     <button className="btn event-create-submit" disabled={saving || loadingOptions || !groups.length}>{loadingOptions ? 'Carico gruppi e carte…' : saving ? 'Creo evento e carte…' : `Crea evento con ${selected.size} carte`}</button>
