@@ -3,7 +3,6 @@ import { z } from 'zod'
 import crypto from 'crypto'
 import { requireAuth, AuthRequest } from '../middleware/auth'
 import { db, documentData, firebaseAuth } from '../services/firebase'
-import { ensureWallet } from '../services/auctions'
 import { notifyUser, sendDeviceNotificationTest } from '../services/notifications'
 
 const router = Router()
@@ -40,11 +39,10 @@ router.get('/me', requireAuth, async (req: AuthRequest, res) => {
 
 router.get('/overview', requireAuth, async (req: AuthRequest, res) => {
   const userId = req.userId!
-  const [groups, cards, scores, notifications, wallet] = await Promise.all([
+  const [groups, cards, notifications] = await Promise.all([
     db.collection('groups').where('memberIds', 'array-contains', userId).get(),
     db.collection('cards').where('authorId', '==', userId).get(),
-    db.collection('scores').where('userId', '==', userId).get(),
-    db.collection('notifications').where('userId', '==', userId).get(), ensureWallet(userId)
+    db.collection('notifications').where('userId', '==', userId).get()
   ])
   const groupIds = new Set(groups.docs.map((group) => group.id))
   const allEvents = await db.collection('events').get()
@@ -57,9 +55,21 @@ router.get('/overview', requireAuth, async (req: AuthRequest, res) => {
     .map((notification) => documentData(notification.id, notification.data() as Record<string, unknown>))
     .sort((left, right) => String(right.createdAt ?? '').localeCompare(String(left.createdAt ?? '')))
     .slice(0, 4)
+  const primaryGroup = groups.docs[0]
+  const primaryMemberIds = (primaryGroup?.data().memberIds as string[] | undefined) ?? []
+  const primaryMembers = await Promise.all(primaryMemberIds.map(async (memberId) => {
+    const member = await db.collection('users').doc(memberId).get(); const data = member.data() ?? {}
+    return { id: memberId, username: data.username ?? 'Giocatore', avatar: data.avatar ?? '', crewRole: data.crewRole ?? 'Jolly' }
+  }))
+  const crewUpdates = allEvents.docs
+    .filter((event) => event.data().groupId === primaryGroup?.id && new Date(String(event.data().endsAt)).getTime() > Date.now())
+    .sort((left, right) => String(left.data().startsAt).localeCompare(String(right.data().startsAt)))
+    .slice(0, 3)
+    .map((event) => ({ id: event.id, title: String(event.data().title ?? 'Evento della crew'), message: String(event.data().liveUpdate ?? event.data().description ?? 'La crew si prepara al prossimo colpo di scena.'), startsAt: String(event.data().startsAt ?? '') }))
   return res.json({
-    stats: { groups: groups.size, cards: cards.size, credits: Math.max(0, Number(wallet.data()?.balance ?? 1000) - Number(wallet.data()?.reserved ?? 0)), reservedCredits: Number(wallet.data()?.reserved ?? 0) },
-    nextEvents, recentNotifications
+    stats: { groups: groups.size, events: nextEvents.length, cards: cards.size },
+    nextEvents, recentNotifications,
+    primaryCrew: primaryGroup ? { id: primaryGroup.id, name: String(primaryGroup.data().name ?? 'La tua crew'), members: primaryMembers, updates: crewUpdates } : null
   })
 })
 

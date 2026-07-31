@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react'
 import { Routes, Route, Link, NavLink, useNavigate } from 'react-router-dom'
 import { onAuthStateChanged, signOut } from 'firebase/auth'
-import { CalendarDays, Home, Layers, LogOut, User, Users, X } from 'lucide-react'
+import { Bell, CalendarDays, Home, Layers, LogOut, User, Users, X } from 'lucide-react'
 import { firebaseAuth } from './services/firebase'
 import ProtectedRoute from './components/ProtectedRoute'
 import PwaInstallPrompt from './components/PwaInstallPrompt'
 import BrandMark from './components/BrandMark'
 import { listenToForegroundPush } from './services/push'
 import OnboardingTutorial from './components/OnboardingTutorial'
+import LoginNotificationPrompt from './components/LoginNotificationPrompt'
 
 const Landing = React.lazy(() => import('./pages/Landing'))
 const Login = React.lazy(() => import('./pages/Login'))
@@ -64,7 +65,7 @@ function Header() {
 function MobileNav() {
   const loggedIn = useLoggedIn()
   if (!loggedIn) return null
-  const items = [[Home, '/dashboard', 'Home'], [Users, '/groups', 'Crew'], [CalendarDays, '/events', 'Eventi'], [Layers, '/cards', 'Carte'], [User, '/profile/setup', 'Profilo']] as const
+  const items = [[Home, '/dashboard', 'Home'], [Users, '/groups', 'Crew'], [CalendarDays, '/events', 'Eventi'], [Layers, '/cards', 'Carte'], [Bell, '/notifications', 'Avvisi'], [User, '/profile/setup', 'Profilo']] as const
   return <nav className="mobile-nav" aria-label="Navigazione principale">{items.map(([Icon, to, label]) => <NavLink key={to} to={to}><Icon size={19} /><span>{label}</span></NavLink>)}</nav>
 }
 
@@ -101,7 +102,7 @@ export default function App() {
       <Route path="/events/create" element={<ProtectedRoute><CreateEvent /></ProtectedRoute>} />
       <Route path="/events/:id" element={<ProtectedRoute><EventDetail /></ProtectedRoute>} />
     </Routes></React.Suspense></main><MobileNav />
-    <OnboardingTutorial loggedIn={loggedIn} />
+    <OnboardingTutorial loggedIn={loggedIn} /><LoginNotificationPrompt loggedIn={loggedIn} />
     <footer className="app-footer">FantaDrama è un gioco di intrattenimento tra amici. Nessun denaro reale, nessuna vincita economica.</footer>
   </div>
 }
