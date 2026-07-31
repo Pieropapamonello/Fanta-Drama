@@ -64,7 +64,9 @@ async function announceNewEvent(eventId: string, event: Record<string, unknown>,
 router.post('/', requireAuth, async (req: AuthRequest, res) => {
   try {
     const data = schema.parse(req.body)
-    if (await groupRole(data.groupId, req.userId!) !== 'ADMIN' && !await isPlatformAdmin(req.userId!)) return res.status(403).json({ error: 'admin_required' })
+    // Ogni membro può creare un capitolo per la propria crew; eliminazione e
+    // moderazione dell'evento restano riservate agli amministratori.
+    if (!await groupRole(data.groupId, req.userId!) && !await isPlatformAdmin(req.userId!)) return res.status(403).json({ error: 'group_member_required' })
     if (new Date(data.endsAt) <= new Date(data.startsAt)) return res.status(400).json({ error: 'invalid_dates' })
     if (data.acquisitionMode === 'AUCTION' && new Date(data.startsAt).getTime() < Date.now() + 60 * 60 * 1000) return res.status(400).json({ error: 'event_needs_one_hour_auction' })
     if (data.acquisitionMode === 'DIRECT' && new Date(data.startsAt).getTime() <= Date.now()) return res.status(400).json({ error: 'event_must_start_in_future' })

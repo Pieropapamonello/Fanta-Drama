@@ -24,7 +24,7 @@ export default function CreateEvent() {
 
   useEffect(() => {
     Promise.all([api.get('/groups'), api.get('/cards/library')]).then(([groupData, cardData]) => {
-      setGroups((groupData.data.groups || []).filter((group: any) => group.currentUserRole === 'ADMIN'))
+      setGroups(groupData.data.groups || [])
       if (requestedGroupId) setValue('groupId', requestedGroupId)
       const library = cardData.data.cards || []; setCards(library); setSelected(new Set(library.map(keyFor)))
     }).catch(() => setError('Non riesco a caricare gruppi e carte.')).finally(() => setLoadingOptions(false))
