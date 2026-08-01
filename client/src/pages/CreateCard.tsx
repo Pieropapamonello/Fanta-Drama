@@ -9,7 +9,7 @@ import ImageForge from '../components/ImageForge'
 const schema = z.object({ title: z.string().trim().min(3), description: z.string().trim().min(12), directPrice: z.coerce.number().int().min(1).max(1_000_000), imageUrl: z.string().url(), imageStoragePath: z.string().optional(), imageSource: z.enum(['AI', 'UPLOAD', 'BASE']).optional() })
 
 export default function CreateCard() {
-  const { register, handleSubmit, setValue, watch, formState: { errors, isSubmitting } } = useForm({ resolver: zodResolver(schema), defaultValues: { directPrice: 100 } })
+  const { register, handleSubmit, setValue, watch, formState: { errors, isSubmitting } } = useForm<z.infer<typeof schema>>({ resolver: zodResolver(schema), defaultValues: { directPrice: 100 } })
   const navigate = useNavigate(); const [search] = useSearchParams(); const eventId = search.get('eventId'); const [error, setError] = useState('')
   const dedicated = Boolean(eventId)
   const onSubmit = async (data: any) => {
