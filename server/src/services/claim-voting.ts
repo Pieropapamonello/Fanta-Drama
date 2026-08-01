@@ -42,6 +42,47 @@ async function confirmMatchingClaims(sourceRef: FirebaseFirestore.DocumentRefere
   return matching.length
 }
 
+/**
+ * A direct-purchase card represents the same occurrence for the whole event.
+ * Once that occurrence is confirmed, every participant who already owns an
+ * unused copy gets it played, confirmed and scored automatically.
+ */
+async function autoPlayOwnedCopies(sourceClaim: Record<string, unknown>) {
+  const eventId = String(sourceClaim.eventId)
+  const cardKey = String(sourceClaim.cardKey ?? '')
+  const [purchases, claims] = await Promise.all([
+    db.collection('eventCardPurchases').where('eventId', '==', eventId).get(),
+    db.collection('cardClaims').where('eventId', '==', eventId).get()
+  ])
+  const claimed = new Set(claims.docs.map((item) => `${item.data().auctionId}\u0000${item.data().userId}`))
+  const candidates = purchases.docs.filter((purchase) => {
+    const data = purchase.data()
+    return String(data.cardKey ?? '') === cardKey && !data.playedAt && !claimed.has(`${data.auctionId}\u0000${data.userId}`)
+  })
+  if (!candidates.length) return 0
+  const now = new Date().toISOString()
+  const created: Array<{ ref: FirebaseFirestore.DocumentReference, claim: Record<string, unknown> }> = []
+  const remaining = [...candidates]
+  while (remaining.length) {
+    const batch = db.batch()
+    remaining.splice(0, 250).forEach((purchase) => {
+      const data = purchase.data()
+      const claimRef = db.collection('cardClaims').doc()
+      const claim = {
+        eventId, groupId: data.groupId, auctionId: purchase.data().auctionId, cardKey, cardTitle: data.title ?? sourceClaim.cardTitle,
+        userId: data.userId, note: 'Carta giocata automaticamente: la crew ha gia confermato questo evento.', spentCredits: Math.max(1, Math.round(Number(data.price ?? sourceClaim.spentCredits ?? 1))),
+        status: 'CONFIRMED', resolvedAt: now, resolvedAtBy: 'same_card_rule', autoApproved: true, autoPlayed: true, sourceClaimId: sourceClaim.id ?? null, createdAt: now, updatedAt: now
+      }
+      batch.update(purchase.ref, { playedAt: now, playedClaimId: claimRef.id, autoPlayedAt: now, updatedAt: now })
+      batch.set(claimRef, claim)
+      created.push({ ref: claimRef, claim })
+    })
+    await batch.commit()
+  }
+  await Promise.all(created.map(({ ref, claim }) => rewardClaim(ref, claim)))
+  return created.length
+}
+
 export async function submitClaimVote(claimId: string, userId: string, vote: 'CONFIRM' | 'DENY') {
   const ref = db.collection('cardClaims').doc(claimId)
   const initial = await ref.get()
@@ -85,8 +126,9 @@ export async function submitClaimVote(claimId: string, userId: string, vote: 'CO
   if (outcome.status === 'CONFIRMED') {
     await rewardClaim(ref, outcome.claim)
     const matchingClaims = await confirmMatchingClaims(ref, outcome.claim)
-    const awarded = matchingClaims + 1
-    await notifyEventParticipants(String(outcome.claim.eventId), { kind: 'SCORE_UPDATED', title: `Carta confermata - ${outcome.claim.cardTitle}`, message: awarded > 1 ? `Carta valida per ${awarded} giocatori: punti assegnati automaticamente e classifica aggiornata.` : `Carta valida: ${outcome.claim.spentCredits} punti assegnati. La classifica e aggiornata.`, path: `/events/${outcome.claim.eventId}`, actionLabel: 'Vedi classifica' })
+    const autoPlayed = await autoPlayOwnedCopies({ ...outcome.claim, id: ref.id })
+    const awarded = matchingClaims + autoPlayed + 1
+    await notifyEventParticipants(String(outcome.claim.eventId), { kind: 'SCORE_UPDATED', title: `Carta confermata - ${outcome.claim.cardTitle}`, message: awarded > 1 ? `Carta valida per ${awarded} giocatori: copie gia acquistate giocate e premiate automaticamente. Classifica aggiornata.` : `Carta valida: ${outcome.claim.spentCredits} punti assegnati. La classifica e aggiornata.`, path: `/events/${outcome.claim.eventId}`, actionLabel: 'Vedi classifica' })
   } else if (outcome.status === 'DENIED') {
     await notifyEventParticipants(String(outcome.claim.eventId), { kind: 'CLAIM_DENIED', title: `Carta contestata - ${outcome.claim.cardTitle}`, message: "La carta e stata negata. Dalla verifica puoi chiedere l'intervento dell'amministratore.", path: `/events/${outcome.claim.eventId}`, actionLabel: 'Apri verifica carta' })
   }
