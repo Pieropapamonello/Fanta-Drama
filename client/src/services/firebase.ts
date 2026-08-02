@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app'
-import { getAuth } from 'firebase/auth'
+import { browserLocalPersistence, getAuth, onAuthStateChanged, onIdTokenChanged, setPersistence, type User } from 'firebase/auth'
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -16,3 +16,19 @@ if (!firebaseConfig.apiKey || !firebaseConfig.authDomain || !firebaseConfig.proj
 
 export const firebaseApp = initializeApp(firebaseConfig)
 export const firebaseAuth = getAuth(firebaseApp)
+
+// Keep the Firebase session in the browser/PWA storage.  ID tokens themselves
+// expire quickly, but Firebase refreshes them as long as this session exists.
+export const firebaseAuthReady: Promise<User | null> = setPersistence(firebaseAuth, browserLocalPersistence)
+  .catch(() => undefined)
+  .then(() => new Promise<User | null>((resolve) => {
+    const stop = onAuthStateChanged(firebaseAuth, (user) => { stop(); resolve(user) })
+  }))
+
+onIdTokenChanged(firebaseAuth, (user) => {
+  if (!user) {
+    localStorage.removeItem('fd_token')
+    return
+  }
+  void user.getIdToken().then((token) => localStorage.setItem('fd_token', token)).catch(() => undefined)
+})
