@@ -30,13 +30,14 @@ async function waitForActiveWorker(registration: ServiceWorkerRegistration) {
   return registration
 }
 
-export async function enableDeviceNotifications() {
+async function registerDevicePush(requestPermission: boolean) {
   const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream
   const installed = window.matchMedia('(display-mode: standalone)').matches || Boolean((navigator as any).standalone)
   if (isIos && !installed) return { ok: false, message: 'Su iPhone prima installa FantaDrama sulla schermata Home, poi aprila dall’icona e attiva gli avvisi.' }
   if (!('Notification' in window) || !('serviceWorker' in navigator) || !await isSupported()) return { ok: false, message: 'Questo browser non supporta le notifiche dell’app.' }
   if (Notification.permission === 'denied') return { ok: false, message: 'Le notifiche sono bloccate nelle impostazioni del dispositivo.' }
-  const permission = await Notification.requestPermission()
+  if (!requestPermission && Notification.permission !== 'granted') return { ok: false, message: 'Il permesso notifiche non e ancora attivo.' }
+  const permission = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission()
   if (permission !== 'granted') return { ok: false, message: 'Permesso non concesso. Potrai attivarlo dalle impostazioni quando vuoi.' }
   const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY
   if (!vapidKey) return { ok: false, message: 'Permesso concesso. Manca ancora la chiave push di Firebase: l’amministratore la sta configurando.' }
@@ -59,6 +60,18 @@ export async function enableDeviceNotifications() {
     if (detail.includes('no active Service Worker')) return { ok: false, message: 'Il servizio notifiche si sta ancora preparando. Attendi qualche secondo e riprova.' }
     return { ok: false, message: `Non riesco a registrare il telefono alle notifiche${code ? ` (${code})` : ''}${detail ? `: ${detail}` : ''}` }
   }
+}
+
+export function enableDeviceNotifications() {
+  return registerDevicePush(true)
+}
+
+// FCM registration tokens can rotate after browser/PWA updates. Re-sync a
+// previously approved device whenever the player opens FantaDrama, without
+// showing a permission prompt again.
+export async function syncDeviceNotificationsIfGranted() {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return { ok: false, message: 'not_granted' }
+  return registerDevicePush(false)
 }
 
 export async function listenToForegroundPush() {

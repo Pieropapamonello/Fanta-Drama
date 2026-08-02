@@ -2,11 +2,11 @@ import React, { useEffect, useState } from 'react'
 import { Routes, Route, Link, NavLink, useNavigate } from 'react-router-dom'
 import { onAuthStateChanged, signOut } from 'firebase/auth'
 import { Bell, CalendarDays, Home, Layers, LogOut, User, Users, X } from 'lucide-react'
-import { firebaseAuth } from './services/firebase'
+import { firebaseAuth, firebaseAuthReady } from './services/firebase'
 import ProtectedRoute from './components/ProtectedRoute'
 import PwaInstallPrompt from './components/PwaInstallPrompt'
 import BrandMark from './components/BrandMark'
-import { listenToForegroundPush } from './services/push'
+import { listenToForegroundPush, syncDeviceNotificationsIfGranted } from './services/push'
 import OnboardingTutorial from './components/OnboardingTutorial'
 import LoginNotificationPrompt from './components/LoginNotificationPrompt'
 
@@ -76,6 +76,10 @@ export default function App() {
     void listenToForegroundPush().then((stop) => { unsubscribe = stop })
     return () => unsubscribe?.()
   }, [])
+  React.useEffect(() => {
+    if (!loggedIn) return
+    void firebaseAuthReady.then((user) => user && syncDeviceNotificationsIfGranted()).catch(() => undefined)
+  }, [loggedIn])
   return <div className="app-shell">
     <Header />
     <main className="app-main"><React.Suspense fallback={<div className="empty-state" role="status">Apro la drama room…</div>}><Routes>

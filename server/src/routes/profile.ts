@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import crypto from 'crypto'
 import { requireAuth, AuthRequest } from '../middleware/auth'
+import { FieldValue } from 'firebase-admin/firestore'
 import { db, documentData, firebaseAuth } from '../services/firebase'
 import { notifyUser, sendDeviceNotificationTest } from '../services/notifications'
 
@@ -91,6 +92,10 @@ router.post('/push-subscriptions', requireAuth, async (req: AuthRequest, res) =>
     const existing = await db.collection('pushSubscriptions').where('token', '==', data.token).limit(1).get()
     const ref = existing.empty ? db.collection('pushSubscriptions').doc() : existing.docs[0].ref
     await ref.set({ userId: req.userId!, token: data.token, platform: data.platform ?? 'web', updatedAt: new Date().toISOString() }, { merge: true })
+    // Device permission and a valid FCM token mean this channel is explicitly
+    // usable.  Keep profile preferences aligned so a user does not have to
+    // press both "Attiva avvisi" and a second channel-selection button.
+    await db.collection('users').doc(req.userId!).set({ notificationChannels: FieldValue.arrayUnion('DEVICE'), updatedAt: new Date().toISOString() }, { merge: true })
     const sameDevice = await db.collection('pushSubscriptions').where('userId', '==', req.userId!).get()
     const stale = sameDevice.docs.filter((item) => item.id !== ref.id && String(item.data().platform ?? 'web') === String(data.platform ?? 'web'))
     await Promise.all(stale.map((item) => item.ref.delete()))
