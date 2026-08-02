@@ -151,10 +151,22 @@ async function handleAction(chatId: string | number, from: TelegramUser, action:
     return telegramApi('sendMessage', { chat_id: chatId, text, reply_markup: { inline_keyboard: [[{ text: 'Apri eventi', web_app: { url: `${appUrl.replace('/telegram-miniapp', '')}/events` } }], [{ text: 'Menu', callback_data: 'menu' }]] } })
   }
   if (action === 'credits' || action === 'scores') {
-    const wallet = await db.collection('wallets').doc(user.id).get(); const balance = Number(wallet.data()?.balance ?? 1000); const reserved = Number(wallet.data()?.reserved ?? 0)
-    const leading = await db.collection('auctions').where('leaderId', '==', user.id).get()
-    const active = leading.docs.filter((auction) => auction.data().status === 'OPEN').length
-    return telegramApi('sendMessage', { chat_id: chatId, text: `I tuoi crediti\n\nDisponibili: ${Math.max(0, balance - reserved)}\nIn offerte: ${reserved}\nAste in testa: ${active}`, reply_markup: { inline_keyboard: [[{ text: 'Apri le mie aste', web_app: { url: `${appUrl.replace('/telegram-miniapp', '')}/events` } }], [{ text: 'Menu', callback_data: 'menu' }]] } })
+    const [groups, eventWallets, leading] = await Promise.all([
+      db.collection('groups').where('memberIds', 'array-contains', user.id).get(),
+      db.collection('eventWallets').where('userId', '==', user.id).get(),
+      db.collection('auctions').where('leaderId', '==', user.id).get()
+    ])
+    const groupIds = new Set(groups.docs.map((group) => group.id))
+    const allEvents = await db.collection('events').get()
+    const events = allEvents.docs.filter((event) => groupIds.has(String(event.data().groupId)) && ((event.data().participantIds as string[] | undefined) ?? []).includes(user.id) && event.data().state !== 'PRONOSTICI_CHIUSI').slice(0, 8)
+    const walletByEvent = new Map(eventWallets.docs.map((wallet) => [String(wallet.data().eventId), wallet.data()]))
+    const lines = events.map((event) => {
+      const wallet = walletByEvent.get(event.id) ?? {}; const balance = Number(wallet.balance ?? 1000); const reserved = Number(wallet.reserved ?? 0)
+      const active = leading.docs.filter((auction) => auction.data().eventId === event.id && auction.data().status === 'OPEN').length
+      return `- ${event.data().title}: ${Math.max(0, balance - reserved)} crediti${reserved ? ` (${reserved} in offerta)` : ''}${active ? ` - ${active} aste in testa` : ''}`
+    })
+    const text = lines.length ? `Crediti per evento\n\n${lines.join('\n')}\n\nI crediti ripartono da 1000 per ogni nuovo evento.` : 'Non stai ancora partecipando a eventi attivi. I crediti compariranno quando entrerai in una serata.'
+    return telegramApi('sendMessage', { chat_id: chatId, text, reply_markup: { inline_keyboard: [[{ text: 'Apri le mie aste', web_app: { url: `${appUrl.replace('/telegram-miniapp', '')}/events` } }], [{ text: 'Menu', callback_data: 'menu' }]] } })
   }
   if (action === 'leaderboard') {
     const groups = await db.collection('groups').where('memberIds', 'array-contains', user.id).get()
