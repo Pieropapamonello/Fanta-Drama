@@ -143,3 +143,49 @@ export async function approveKnownEventCard(eventId: string, cardKey: string) {
 export async function notifyClaimantConfirmed(claim: Record<string, unknown>) {
   await notifyUser(String(claim.userId), { kind: 'CLAIM_CONFIRMED', title: 'Carta giocata confermata', message: `La carta vale ${claim.spentCredits} punti: la tua classifica si e aggiornata.`, path: `/events/${claim.eventId}` })
 }
+
+/**
+ * Verifications are intentionally grouped by event + card. A reminder is sent
+ * once for the occurrence, not once for every player that owns the same card.
+ * This runs from the server tick and is safe to call frequently.
+ */
+export async function refreshClaimVerificationReminders() {
+  const pending = await db.collection('cardClaims').where('status', '==', 'PENDING').get()
+  const grouped = new Map<string, FirebaseFirestore.QueryDocumentSnapshot>()
+  pending.docs.forEach((item) => {
+    const data = item.data()
+    const key = `${String(data.eventId)}\u0000${String(data.cardKey ?? item.id)}`
+    const current = grouped.get(key)
+    if (!current || String(item.data().createdAt ?? '').localeCompare(String(current.data().createdAt ?? '')) < 0) grouped.set(key, item)
+  })
+  const now = Date.now()
+  await Promise.allSettled([...grouped.values()].map(async (item) => {
+    const claim = item.data()
+    const eventId = String(claim.eventId)
+    const path = `/events/${eventId}#verifiche-carte`
+    const reminderAt = new Date(String(claim.verificationReminderAt ?? '')).getTime()
+    if (Number.isFinite(reminderAt) && reminderAt <= now && !claim.reminderSentAt) {
+      await item.ref.update({ reminderSentAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
+      await notifyEventParticipants(eventId, {
+        kind: 'CLAIM_REMINDER', title: `Manca una conferma - ${claim.cardTitle}`,
+        message: 'La carta e ancora in verifica: apri l\'evento per approvare, contestare o chiedere l\'intervento admin.',
+        path, actionLabel: 'Apri verifica carta',
+        telegramButtons: [[
+          { text: 'Approva', callback_data: `claim:${item.id}:CONFIRM` },
+          { text: 'Contesta', callback_data: `claim:${item.id}:DENY` }
+        ], [{ text: 'Contatta admin', callback_data: `claim:${item.id}:APPEAL` }]]
+      })
+    }
+    const reviewAt = new Date(String(claim.adminReviewAt ?? '')).getTime()
+    if (!Number.isFinite(reviewAt) || reviewAt > now || claim.adminReviewNotifiedAt) return
+    const [group, admins] = await Promise.all([db.collection('groups').doc(String(claim.groupId)).get(), db.collection('platformAdmins').get()])
+    const groupAdmins = Object.entries((group.data()?.memberRoles ?? {}) as Record<string, string>).filter(([, role]) => role === 'ADMIN').map(([id]) => id)
+    const adminIds = new Set([...groupAdmins, ...admins.docs.map((admin) => admin.id)])
+    await item.ref.update({ adminReviewNotifiedAt: new Date().toISOString(), adminReviewRequested: true, updatedAt: new Date().toISOString() })
+    await Promise.allSettled([...adminIds].map((userId) => notifyUser(userId, {
+      kind: 'CLAIM_ADMIN_REVIEW', title: `Verifica da decidere - ${claim.cardTitle}`,
+      message: 'La crew non ha ancora raggiunto due voti. Puoi confermare o contestare la carta dalla console evento.',
+      path, actionLabel: 'Apri verifica'
+    })))
+  }))
+}

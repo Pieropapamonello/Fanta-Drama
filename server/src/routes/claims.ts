@@ -7,7 +7,12 @@ import { isPlatformAdmin } from '../services/platform-admin'
 import { approveKnownEventCard, rewardClaim as rewardEventClaim, submitClaimVote } from '../services/claim-voting'
 
 const router = Router()
-const claimSchema = z.object({ auctionId: z.string().min(1), note: z.string().trim().max(500).optional() })
+const claimSchema = z.object({
+  auctionId: z.string().min(1),
+  note: z.string().trim().max(500).optional(),
+  proofImageUrl: z.string().url().max(1800).optional(),
+  proofVideoUrl: z.string().url().max(1800).optional()
+})
 const voteSchema = z.object({ vote: z.enum(['CONFIRM', 'DENY']), note: z.string().trim().max(300).optional() })
 const appealSchema = z.object({ message: z.string().trim().min(4).max(1000) })
 
@@ -50,7 +55,12 @@ router.get('/event/:eventId', requireAuth, async (req: AuthRequest, res) => {
   const items = await Promise.all(claims.docs.map(async (claim) => {
     const votes = await claim.ref.collection('votes').get()
     const user = await db.collection('users').doc(String(claim.data().userId)).get()
-    return { ...documentData(claim.id, claim.data() as Record<string, unknown>), claimantName: user.data()?.username ?? 'Giocatore', votes: votes.docs.map((vote) => documentData(vote.id, vote.data() as Record<string, unknown>)) }
+    return {
+      ...documentData(claim.id, claim.data() as Record<string, unknown>),
+      claimantName: user.data()?.username ?? 'Giocatore',
+      claimantAvatarUrl: user.data()?.avatarUrl ?? null,
+      votes: votes.docs.map((vote) => documentData(vote.id, vote.data() as Record<string, unknown>))
+    }
   }))
   return res.json({ claims: items })
 })
@@ -86,7 +96,16 @@ router.post('/event/:eventId', requireAuth, async (req: AuthRequest, res) => {
       }
       const cardKey = String(auction.cardKey ?? `auction:${auctionSnapshot.id}`)
       const autoApproved = await approveKnownEventCard(event.id, cardKey)
-      const value = { eventId: event.id, groupId: event.data()?.groupId, auctionId: auctionSnapshot.id, cardKey, cardTitle: auction.title, userId: req.userId!, note: data.note ?? '', spentCredits: Math.round(spentCredits), status: autoApproved ? 'CONFIRMED' : 'PENDING', ...(autoApproved ? { resolvedAt: now, resolvedAtBy: 'known_card_rule', autoApproved: true } : {}), createdAt: now, updatedAt: now }
+      const value = {
+        eventId: event.id, groupId: event.data()?.groupId, auctionId: auctionSnapshot.id, cardKey, cardTitle: auction.title,
+        userId: req.userId!, note: data.note ?? '', proofImageUrl: data.proofImageUrl ?? null, proofVideoUrl: data.proofVideoUrl ?? null,
+        spentCredits: Math.round(spentCredits), status: autoApproved ? 'CONFIRMED' : 'PENDING',
+        ...(autoApproved ? { resolvedAt: now, resolvedAtBy: 'known_card_rule', autoApproved: true } : {
+          verificationReminderAt: new Date(Date.now() + 30 * 60_000).toISOString(),
+          adminReviewAt: new Date(Date.now() + 2 * 60 * 60_000).toISOString()
+        }),
+        createdAt: now, updatedAt: now
+      }
       transaction.set(ref, value)
       return value
     })

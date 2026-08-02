@@ -17,7 +17,7 @@ export type NotificationPayload = {
   path?: string
   actionLabel?: string
   telegramButtons?: Array<Array<Record<string, string>>>
-  kind: 'EVENT_CREATED' | 'EVENT_CLOSED' | 'EVENT_JOINED' | 'EVENT_CARD_CREATED' | 'SCORE_UPDATED' | 'AUCTION_OPENED' | 'AUCTION_OUTBID' | 'AUCTION_WON' | 'AUCTION_REMINDER' | 'CLAIM_NEEDS_VOTES' | 'CLAIM_CONFIRMED' | 'CLAIM_DENIED' | 'APPEAL_OPENED' | 'APPEAL_DECIDED'
+  kind: 'EVENT_CREATED' | 'EVENT_CLOSED' | 'EVENT_JOINED' | 'EVENT_CARD_CREATED' | 'SCORE_UPDATED' | 'AUCTION_OPENED' | 'AUCTION_OUTBID' | 'AUCTION_WON' | 'AUCTION_REMINDER' | 'CLAIM_NEEDS_VOTES' | 'CLAIM_REMINDER' | 'CLAIM_ADMIN_REVIEW' | 'CLAIM_CONFIRMED' | 'CLAIM_DENIED' | 'APPEAL_OPENED' | 'APPEAL_DECIDED'
 }
 
 export async function sendTelegramMessage(chatId: string | number, text: string, path = '/telegram-miniapp', extraButtons?: Array<Array<Record<string, string>>>, actionLabel = 'Apri FantaDrama') {
