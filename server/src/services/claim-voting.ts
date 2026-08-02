@@ -163,7 +163,8 @@ export async function refreshClaimVerificationReminders() {
     const claim = item.data()
     const eventId = String(claim.eventId)
     const path = `/events/${eventId}#verifiche-carte`
-    const reminderAt = new Date(String(claim.verificationReminderAt ?? '')).getTime()
+    const createdAt = new Date(String(claim.createdAt ?? '')).getTime()
+    const reminderAt = new Date(String(claim.verificationReminderAt ?? (Number.isFinite(createdAt) ? new Date(createdAt + 30 * 60_000).toISOString() : ''))).getTime()
     if (Number.isFinite(reminderAt) && reminderAt <= now && !claim.reminderSentAt) {
       await item.ref.update({ reminderSentAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
       await notifyEventParticipants(eventId, {
@@ -176,7 +177,7 @@ export async function refreshClaimVerificationReminders() {
         ], [{ text: 'Contatta admin', callback_data: `claim:${item.id}:APPEAL` }]]
       })
     }
-    const reviewAt = new Date(String(claim.adminReviewAt ?? '')).getTime()
+    const reviewAt = new Date(String(claim.adminReviewAt ?? (Number.isFinite(createdAt) ? new Date(createdAt + 2 * 60 * 60_000).toISOString() : ''))).getTime()
     if (!Number.isFinite(reviewAt) || reviewAt > now || claim.adminReviewNotifiedAt) return
     const [group, admins] = await Promise.all([db.collection('groups').doc(String(claim.groupId)).get(), db.collection('platformAdmins').get()])
     const groupAdmins = Object.entries((group.data()?.memberRoles ?? {}) as Record<string, string>).filter(([, role]) => role === 'ADMIN').map(([id]) => id)
