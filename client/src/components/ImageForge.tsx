@@ -5,7 +5,16 @@ import api from '../services/api'
 type Kind = 'CARD' | 'EVENT' | 'AVATAR'
 type ImageSource = 'AI' | 'UPLOAD' | 'BASE'
 
-export default function ImageForge({ kind, imageUrl, onChange }: { kind: Kind; imageUrl?: string; onChange: (url: string, storagePath?: string, source?: ImageSource) => void }) {
+function uploadErrorMessage(error: any) {
+  const code = String(error?.response?.data?.error ?? '')
+  if (code.includes('expired_access_token') || code.includes('_401_')) return 'Dropbox ha rifiutato il token: va rigenerato o aggiornato su Render.'
+  if (code.includes('_403') || code.includes('shared_link_failed')) return 'Dropbox ha rifiutato il caricamento o il link pubblico: controlla i permessi files.content.write e sharing.write.'
+  if (code === 'image_too_large') return 'L’immagine supera 2,5 MB. Scegline una più piccola.'
+  if (code === 'invalid_image_upload') return 'Usa un file PNG, JPG o WebP valido.'
+  return 'Non riesco a caricare questa immagine. Riprova.'
+}
+
+export default function ImageForge({ kind, imageUrl, onChange }: { kind: Kind; imageUrl?: string; onChange: (url: string, storagePath?: string, source?: ImageSource) => void | Promise<void> }) {
   const [description, setDescription] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
@@ -23,8 +32,8 @@ export default function ImageForge({ kind, imageUrl, onChange }: { kind: Kind; i
     setIsGenerating(true); setMessage("L'IA sta creando la tua immagine...")
     try {
       const response = await api.post('/assets/generate', { kind, description })
-      onChange(response.data.imageUrl, response.data.storagePath, 'AI')
-      setMessage('Immagine pronta: verra salvata insieme al contenuto.')
+      await onChange(response.data.imageUrl, response.data.storagePath, 'AI')
+      setMessage(kind === 'AVATAR' ? 'Avatar generato e salvato nel profilo.' : kind === 'CARD' ? 'Immagine caricata nell’archivio. Ora premi “Pubblica carta”.' : 'Immagine caricata nell’archivio. Ora salva l’evento.')
     } catch (error: any) {
       const code = error.response?.data?.error
       const configured = /^(openai|gemini|grok|cloudflare)_image_generation_not_configured$/.test(code ?? '')
@@ -42,9 +51,9 @@ export default function ImageForge({ kind, imageUrl, onChange }: { kind: Kind; i
     try {
       const dataUrl = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(file) })
       const response = await api.post('/assets/upload', { kind, dataUrl })
-      onChange(response.data.imageUrl, response.data.storagePath, 'UPLOAD')
-      setMessage('Immagine caricata: verra salvata insieme al contenuto.')
-    } catch { setMessage('Non riesco a caricare questa immagine. Riprova.') } finally { setIsUploading(false) }
+      await onChange(response.data.imageUrl, response.data.storagePath, 'UPLOAD')
+      setMessage(kind === 'CARD' ? 'Immagine caricata nell’archivio. Ora premi “Pubblica carta”.' : 'Immagine caricata nell’archivio. Ora salva l’evento.')
+    } catch (error: any) { setMessage(uploadErrorMessage(error)) } finally { setIsUploading(false) }
   }
 
   return <div className="image-forge">

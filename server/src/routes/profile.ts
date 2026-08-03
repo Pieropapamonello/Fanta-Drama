@@ -16,6 +16,7 @@ const profileSchema = z.object({
 })
 const pushSubscriptionSchema = z.object({ token: z.string().min(40).max(4096), platform: z.string().max(120).optional(), deviceId: z.string().min(8).max(120).optional() })
 const pushDiagnosticSchema = z.object({ code: z.string().max(120).optional(), message: z.string().max(500).optional() })
+const avatarSchema = z.object({ avatar: z.string().url().max(2048) })
 
 function channelsFromLegacy(preference: string) {
   if (preference === 'IN_APP') return []
@@ -109,6 +110,19 @@ router.post('/push-subscriptions', requireAuth, async (req: AuthRequest, res) =>
     await Promise.all(stale.map((item) => item.ref.delete()))
     return res.json({ ok: true })
   } catch (error: any) { return res.status(400).json({ error: error.message ?? 'invalid_push_subscription' }) }
+})
+
+// Generated and uploaded avatars are real assets already stored by /assets.
+// Persist the selected URL immediately so closing the profile screen cannot
+// make a freshly uploaded avatar appear to have been lost.
+router.put('/avatar', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const data = avatarSchema.parse(req.body)
+    await db.collection('users').doc(req.userId!).set({ avatar: data.avatar, updatedAt: new Date().toISOString() }, { merge: true })
+    return res.json({ ok: true, avatar: data.avatar })
+  } catch (error: any) {
+    return res.status(400).json({ error: error.message ?? 'invalid_avatar' })
+  }
 })
 
 router.post('/push-diagnostics', requireAuth, async (req: AuthRequest, res) => {

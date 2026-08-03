@@ -71,13 +71,24 @@ export default function ProfileSetup() {
   }, [])
 
   const chooseAvatar = async (item: any) => {
-    if (!item.value.startsWith('starter:')) { setValue('avatar', item.value, { shouldValidate: true }); return }
+    if (!item.value.startsWith('starter:')) { await persistAvatar(item.value); return }
     setGeneratingAvatar(item.slug); setContactMessage('Genero il tuo avatar unico con IA…')
     try {
       const response = await api.post(`/assets/starter-avatar/${item.slug}`)
       setExtraAvatars((current) => current.map((candidate) => candidate.slug === item.slug ? { ...candidate, value: response.data.imageUrl } : candidate))
-      setValue('avatar', response.data.imageUrl, { shouldValidate: true }); setContactMessage('Avatar pronto.')
+      await persistAvatar(response.data.imageUrl)
     } catch { setContactMessage('Non riesco a generare questo avatar ora. Riprova tra poco.') } finally { setGeneratingAvatar('') }
+  }
+
+  const persistAvatar = async (url: string) => {
+    setValue('avatar', url, { shouldDirty: true, shouldValidate: true })
+    try {
+      await api.put('/profile/avatar', { avatar: url })
+      setProfile((current: any) => current ? { ...current, avatar: url } : current)
+      setContactMessage('Avatar salvato nel profilo.')
+    } catch {
+      setContactMessage('L’immagine è pronta, ma non riesco ancora ad associarla al profilo. Premi “Salva preferenze”.')
+    }
   }
 
   const connectEmail = async () => {
@@ -113,8 +124,11 @@ export default function ProfileSetup() {
     try {
       const dataUrl = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(file) })
       const response = await api.post('/assets/avatar-upload', { dataUrl })
-      setValue('avatar', response.data.imageUrl); setContactMessage('Il tuo avatar personale è pronto.')
-    } catch { setContactMessage('Non riesco a caricare questa immagine. Riprova.') } finally { setIsUploadingAvatar(false) }
+      await persistAvatar(response.data.imageUrl)
+    } catch (err: any) {
+      const code = String(err.response?.data?.error ?? '')
+      setContactMessage(code.includes('_401') || code.includes('expired_access_token') ? 'Dropbox ha rifiutato il token: aggiornalo su Render.' : code.includes('_403') || code.includes('shared_link_failed') ? 'Dropbox non ha i permessi per caricare o condividere la foto.' : code === 'image_too_large' ? 'La foto supera 2,5 MB.' : 'Non riesco a caricare questa immagine. Riprova.')
+    } finally { setIsUploadingAvatar(false) }
   }
 
   const onSubmit = async (data: ProfileForm) => {
@@ -159,7 +173,7 @@ export default function ProfileSetup() {
       {[...avatars, ...extraAvatars].map((item: any) => <button type="button" key={item.slug || item.value} className={`avatar-choice ${avatar === item.value ? 'is-selected' : ''}`} onClick={() => void chooseAvatar(item)} disabled={Boolean(generatingAvatar)}>
         {item.value.startsWith('starter:') ? <div className="avatar-art-placeholder">{item.title.slice(0, 1)}</div> : <img src={item.value} alt="" />}<span><b>{generatingAvatar === item.slug ? 'Genero…' : item.title}</b><small>{item.note}</small></span>{avatar === item.value && <i><Check size={13} /></i>}
       </button>)}
-    </div><input type="hidden" {...register('avatar')} />{!avatars.some((item) => item.value === avatar) && <div className="custom-avatar-preview"><img src={avatar} alt="Avatar personale" /><span>Avatar personale selezionato</span></div>}<ImageForge kind="AVATAR" imageUrl={!avatars.some((item) => item.value === avatar) ? avatar : undefined} onChange={(url) => setValue('avatar', url, { shouldDirty: true, shouldValidate: true })} /><label className="avatar-upload">Oppure carica una tua immagine <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void uploadAvatar(event.target.files?.[0])} disabled={isUploadingAvatar} /><small>{isUploadingAvatar ? 'Caricamento avatar…' : 'PNG, JPG o WebP · massimo 2,5 MB'}</small></label></section>
+    </div><input type="hidden" {...register('avatar')} />{!avatars.some((item) => item.value === avatar) && <div className="custom-avatar-preview"><img src={avatar} alt="Avatar personale" /><span>Avatar personale selezionato</span></div>}<ImageForge kind="AVATAR" imageUrl={!avatars.some((item) => item.value === avatar) ? avatar : undefined} onChange={(url) => persistAvatar(url)} /><label className="avatar-upload">Oppure carica una tua immagine <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void uploadAvatar(event.target.files?.[0])} disabled={isUploadingAvatar} /><small>{isUploadingAvatar ? 'Caricamento avatar…' : 'PNG, JPG o WebP · massimo 2,5 MB'}</small></label></section>
     <section className="profile-fields"><label>Nickname in app<input className="input" {...register('username', { required: true, minLength: 3, maxLength: 30 })} placeholder="Come ti chiama la crew?" /></label><label>Ruolo nella crew<select className="input" {...register('crewRole')}><option>Jolly</option><option>Stratega</option><option>Creatore di caos</option><option>Osservatore</option><option>Regista del drama</option></select></label><label>Bio <small>opzionale</small><textarea className="input profile-textarea" {...register('bio', { maxLength: 160 })} maxLength={160} placeholder="Una frase che racconta il tuo stile…" /></label><label><MapPin size={14} /> Città <small>opzionale</small><input className="input" {...register('city', { maxLength: 48 })} maxLength={48} placeholder="Es. Roma" /></label><label className="profile-motto">Il tuo motto <small>opzionale</small><input className="input" {...register('motto', { maxLength: 90 })} maxLength={90} placeholder="Es. Il drama mi trova sempre." /></label></section>
     <section className="connection-section"><div className="profile-section-title"><Sparkles size={17} /><div><strong>Account e notifiche</strong><span>Collega i canali che vuoi usare</span></div></div><div className="connection-grid">
       <div className={`connection-card ${profile?.connections?.email ? 'is-connected' : ''}`}><b>✉ E-mail</b>{profile?.connections?.email ? <><span>{profile.email}</span><small>Collegata</small></> : <><input className="input" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="nome@email.it" type="email" /><input className="input" value={emailPassword} onChange={(event) => setEmailPassword(event.target.value)} placeholder="Crea una password" type="password" /><button type="button" className="btn btn-ghost" onClick={connectEmail} disabled={isLinkingEmail}>{isLinkingEmail ? 'Collegamento…' : 'Collega e-mail'}</button></>}</div>

@@ -25,14 +25,22 @@ router.post('/generate', requireAuth, async (req: AuthRequest, res) => {
 
 router.post('/avatar-upload', requireAuth, async (req: AuthRequest, res) => {
   try { return res.status(201).json({ imageUrl: await uploadAvatarAsset(req.userId!, uploadSchema.parse(req.body).dataUrl) }) }
-  catch (error: any) { return res.status(400).json({ error: error.message ?? 'avatar_upload_failed' }) }
+  catch (error: any) {
+    const message = error.message ?? 'avatar_upload_failed'
+    console.error('Avatar upload failed', { userId: req.userId, code: message })
+    return res.status(400).json({ error: message })
+  }
 })
 
 router.post('/upload', requireAuth, async (req: AuthRequest, res) => {
   try {
     const data = z.object({ kind: z.enum(['CARD', 'EVENT']), dataUrl: z.string().min(32).max(3_500_000) }).parse(req.body)
     return res.status(201).json(await uploadImageAsset(req.userId!, data.kind, data.dataUrl))
-  } catch (error: any) { return res.status(400).json({ error: error.message ?? 'image_upload_failed' }) }
+  } catch (error: any) {
+    const message = error.message ?? 'image_upload_failed'
+    console.error('Image upload failed', { kind: req.body?.kind, userId: req.userId, code: message })
+    return res.status(400).json({ error: message })
+  }
 })
 
 router.get('/base-images', requireAuth, async (req, res) => {
