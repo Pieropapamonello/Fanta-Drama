@@ -58,7 +58,7 @@ router.get('/event/:eventId', requireAuth, async (req: AuthRequest, res) => {
     return {
       ...documentData(claim.id, claim.data() as Record<string, unknown>),
       claimantName: user.data()?.username ?? 'Giocatore',
-      claimantAvatarUrl: user.data()?.avatarUrl ?? null,
+      claimantAvatarUrl: user.data()?.avatar ?? null,
       votes: votes.docs.map((vote) => documentData(vote.id, vote.data() as Record<string, unknown>))
     }
   }))
