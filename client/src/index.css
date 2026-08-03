@@ -43,6 +43,7 @@ button { cursor: pointer; }
 .nav-links { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem; }
 .nav-links a, .nav-links button { border: 0; color: #b8b5ce; background: transparent; padding: .52rem .7rem; border-radius: .65rem; font-size: .82rem; font-weight: 700; transition: .2s ease; }
 .nav-links a:hover, .nav-links button:hover { color:#fff; background:rgba(255,255,255,.08); }
+.notification-nav-label { position:relative; display:inline-flex; align-items:center; gap:.26rem; }.notification-nav-label i,.notification-nav-badge { display:grid; place-items:center; min-width:1.08rem; height:1.08rem; padding:0 .22rem; border:1px solid rgba(255,220,227,.84); border-radius:999px; color:#fff; font-size:.56rem; font-style:normal; font-weight:950; line-height:1; background:#eb3f67; box-shadow:0 0 0 2px #111027,0 0 12px rgba(237,59,99,.74); }.mobile-nav-icon { position:relative; display:grid; place-items:center; }.notification-nav-badge { position:absolute; top:-.55rem; right:-.8rem; min-width:.98rem; height:.98rem; padding:0 .15rem; font-size:.5rem; }
 
 .app-main { position: relative; max-width: 1120px; min-height: calc(100vh - 154px); margin: auto; padding: 2rem 1.25rem 3rem; }
 .app-footer { position:relative; max-width: 1120px; margin:auto; padding: 1.4rem 1.25rem 2rem; border-top: 1px solid rgba(255,255,255,.08); color:#817d9d; font-size:.76rem; text-align:center; }

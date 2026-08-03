@@ -6,9 +6,12 @@ const appUrl = 'https://fanta-drama.onrender.com'
 function channelsFromLegacy(preference: string) {
   if (preference === 'IN_APP') return []
   if (preference === 'TELEGRAM') return ['TELEGRAM']
-  if (preference === 'EMAIL') return ['EMAIL']
-  if (preference === 'BOTH') return ['TELEGRAM', 'EMAIL']
-  return ['DEVICE', 'TELEGRAM', 'EMAIL']
+  // E-mail notifications have deliberately been retired from the product.
+  // Keep legacy profiles compatible, but only migrate them to the two
+  // channels that are actually supported by FantaDrama.
+  if (preference === 'EMAIL') return []
+  if (preference === 'BOTH') return ['TELEGRAM']
+  return ['DEVICE', 'TELEGRAM']
 }
 
 export type NotificationPayload = {
@@ -98,7 +101,10 @@ export async function notifyUser(userId: string, payload: NotificationPayload) {
   const user = userSnapshot.exists ? userSnapshot.data()! : {}
   const link = linkSnapshot.exists ? linkSnapshot.data()! : {}
   const preference = ['IN_APP', 'TELEGRAM', 'EMAIL', 'BOTH', 'ALL'].includes(String(user.notificationPreference)) ? String(user.notificationPreference) : 'ALL'
-  const channels = Array.isArray(user.notificationChannels) ? user.notificationChannels.filter((channel): channel is string => ['DEVICE', 'TELEGRAM', 'EMAIL'].includes(String(channel))) : channelsFromLegacy(preference)
+  // Only send externally through channels that the app currently exposes.
+  // This also prevents old saved EMAIL preferences from producing unreliable
+  // e-mails after the user has updated the app.
+  const channels = Array.isArray(user.notificationChannels) ? user.notificationChannels.filter((channel): channel is string => ['DEVICE', 'TELEGRAM'].includes(String(channel))) : channelsFromLegacy(preference)
   const results: Array<{ channel: string, status: string }> = [{ channel: 'in_app', status: 'stored' }]
   if (channels.includes('DEVICE')) results.push(await sendDevicePush(userId, payload))
   if (channels.includes('TELEGRAM') && link.chatId) {
@@ -112,8 +118,6 @@ export async function notifyUser(userId: string, payload: NotificationPayload) {
   } else if (channels.includes('TELEGRAM')) {
     results.push({ channel: 'telegram', status: 'not_connected' })
   }
-  if (channels.includes('EMAIL') && user.email) results.push(await sendEmail(String(user.email), payload))
-  else if (channels.includes('EMAIL')) results.push({ channel: 'email', status: 'not_connected' })
   await db.collection('notifications').add({ userId, ...payload, preference, channels, deliveries: results, createdAt: new Date().toISOString() })
   return results
 }

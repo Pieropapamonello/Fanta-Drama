@@ -80,5 +80,6 @@ export async function listenToForegroundPush() {
     const title = payload.notification?.title ?? payload.data?.title ?? 'FantaDrama'
     const body = payload.notification?.body ?? payload.data?.body ?? 'Hai un nuovo aggiornamento.'
     void navigator.serviceWorker.ready.then((registration) => registration.showNotification(title, { body, icon: '/icons/fantadrama-icon.svg', data: { path: payload.data?.path ?? '/dashboard' } }))
+    window.dispatchEvent(new Event('fd:notifications-changed'))
   })
 }

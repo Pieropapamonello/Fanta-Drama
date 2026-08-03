@@ -12,7 +12,7 @@ const profileSchema = z.object({
   username: z.string().trim().min(3).max(30), avatar: z.union([z.enum(avatars), z.string().url().max(2048)]), bio: z.string().trim().max(160).optional(), city: z.string().trim().max(48).optional(),
   crewRole: z.enum(['Stratega', 'Creatore di caos', 'Osservatore', 'Regista del drama', 'Jolly']).optional(), motto: z.string().trim().max(90).optional(),
   notificationPreference: z.enum(['IN_APP', 'TELEGRAM', 'EMAIL', 'BOTH', 'ALL']).optional(),
-  notificationChannels: z.array(z.enum(['DEVICE', 'TELEGRAM', 'EMAIL'])).optional(),
+  notificationChannels: z.array(z.enum(['DEVICE', 'TELEGRAM'])).optional(),
 })
 const pushSubscriptionSchema = z.object({ token: z.string().min(40).max(4096), platform: z.string().max(40).optional() })
 const pushDiagnosticSchema = z.object({ code: z.string().max(120).optional(), message: z.string().max(500).optional() })
@@ -20,9 +20,9 @@ const pushDiagnosticSchema = z.object({ code: z.string().max(120).optional(), me
 function channelsFromLegacy(preference: string) {
   if (preference === 'IN_APP') return []
   if (preference === 'TELEGRAM') return ['TELEGRAM']
-  if (preference === 'EMAIL') return ['EMAIL']
-  if (preference === 'BOTH') return ['TELEGRAM', 'EMAIL']
-  return ['DEVICE', 'TELEGRAM', 'EMAIL']
+  if (preference === 'EMAIL') return []
+  if (preference === 'BOTH') return ['TELEGRAM']
+  return ['DEVICE', 'TELEGRAM']
 }
 
 async function profileWithConnections(userId: string) {
@@ -77,7 +77,12 @@ router.get('/overview', requireAuth, async (req: AuthRequest, res) => {
 router.get('/notifications', requireAuth, async (req: AuthRequest, res) => {
   const snapshot = await db.collection('notifications').where('userId', '==', req.userId!).get()
   const notifications = snapshot.docs.map((item) => documentData(item.id, item.data() as Record<string, unknown>)).sort((left, right) => String(right.createdAt ?? '').localeCompare(String(left.createdAt ?? ''))).slice(0, 50)
-  return res.json({ notifications })
+  return res.json({ notifications, unreadCount: notifications.filter((item) => !item.readAt).length })
+})
+
+router.get('/notifications/unread-count', requireAuth, async (req: AuthRequest, res) => {
+  const snapshot = await db.collection('notifications').where('userId', '==', req.userId!).get()
+  return res.json({ unreadCount: snapshot.docs.filter((item) => !item.data()?.readAt).length })
 })
 
 router.post('/notifications/read', requireAuth, async (req: AuthRequest, res) => {
