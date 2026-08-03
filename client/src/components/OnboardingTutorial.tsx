@@ -32,7 +32,7 @@ const steps = [
   {
     eyebrow: 'Non perdere un rilancio',
     title: 'Scegli dove ricevere gli avvisi',
-    copy: 'Nel Profilo puoi attivare notifiche sul telefono, Telegram ed e-mail, anche contemporaneamente.',
+    copy: 'Nel Profilo puoi attivare gli avvisi push sul telefono e Telegram, anche contemporaneamente.',
     icon: BellRing,
     visual: <div className="tutorial-notice-visual"><BellRing /><div><strong>Nuova offerta</strong><small>Apri e rilancia subito</small></div></div>,
     hint: 'Puoi riaprire questa guida in qualsiasi momento dal Profilo.'

@@ -1,4 +1,4 @@
-import { Router } from 'express'
+import { Router, type RequestHandler } from 'express'
 import { z } from 'zod'
 import crypto from 'crypto'
 import { requireAuth, AuthRequest } from '../middleware/auth'
@@ -19,7 +19,10 @@ const telegramMiniAppSchema = z.object({ initData: z.string().min(1).max(8192) }
 const telegramLoginTicketSchema = z.object({ ticket: z.string().regex(/^[A-Za-z0-9_-]{32,128}$/) })
 
 const appUrl = (process.env.PUBLIC_APP_URL || 'https://fanta-drama.onrender.com').replace(/\/$/, '')
-const telegramLoginCallbackUrl = process.env.TELEGRAM_LOGIN_REDIRECT_URL || `${appUrl}/api/auth/telegram/oidc/callback`
+// This is the exact redirect already registered in BotFather. Keeping it
+// deterministic avoids a stale Render variable silently selecting the older
+// `/oidc/callback` URL and breaking the hand-off after user approval.
+const telegramLoginCallbackUrl = `${appUrl}/api/auth/telegram/oidc`
 
 function randomUrlToken(bytes = 32) {
   return crypto.randomBytes(bytes).toString('base64url')
@@ -93,7 +96,7 @@ router.post('/telegram', async (req, res) => {
 
 // Browser login: Telegram is used only for authorization, then redirects back
 // to FantaDrama. This is intentionally separate from Mini App authentication.
-router.get('/telegram/oidc/start', async (_req, res) => {
+router.get('/telegram/oidc/start', async (req, res) => {
   const config = telegramLoginConfig()
   if (!config) return res.redirect(`${appUrl}/login?telegram_error=not_configured`)
   const state = randomUrlToken()
@@ -102,7 +105,7 @@ router.get('/telegram/oidc/start', async (_req, res) => {
   const challenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url')
   await db.collection('telegramOidcRequests').doc(state).set({
     codeVerifier, nonce, redirectUri: telegramLoginCallbackUrl,
-    createdAt: new Date().toISOString(), expiresAt: Date.now() + 10 * 60 * 1000
+    popup: req.query.popup === '1', createdAt: new Date().toISOString(), expiresAt: Date.now() + 10 * 60 * 1000
   })
   const params = new URLSearchParams({
     client_id: config.clientId, redirect_uri: telegramLoginCallbackUrl, response_type: 'code',
@@ -112,7 +115,7 @@ router.get('/telegram/oidc/start', async (_req, res) => {
   return res.redirect(`https://oauth.telegram.org/auth?${params.toString()}`)
 })
 
-router.get('/telegram/oidc/callback', async (req, res) => {
+const telegramOidcCallback: RequestHandler = async (req, res) => {
   const error = typeof req.query.error === 'string' ? req.query.error : null
   const state = typeof req.query.state === 'string' ? req.query.state : ''
   const code = typeof req.query.code === 'string' ? req.query.code : ''
@@ -122,7 +125,7 @@ router.get('/telegram/oidc/callback', async (req, res) => {
   try {
     const requestRef = db.collection('telegramOidcRequests').doc(state)
     const request = await requestRef.get()
-    const pending = request.data() as { codeVerifier?: string, nonce?: string, redirectUri?: string, expiresAt?: number } | undefined
+    const pending = request.data() as { codeVerifier?: string, nonce?: string, redirectUri?: string, popup?: boolean, expiresAt?: number } | undefined
     await requestRef.delete()
     if (!pending?.codeVerifier || !pending.redirectUri || !pending.expiresAt || pending.expiresAt < Date.now()) throw new Error('expired_request')
     const basic = Buffer.from(`${config.clientId}:${config.clientSecret}`).toString('base64')
@@ -136,22 +139,29 @@ router.get('/telegram/oidc/callback', async (req, res) => {
     const [headerPart, payloadPart, signaturePart] = tokenPayload.id_token.split('.')
     if (!headerPart || !payloadPart || !signaturePart) throw new Error('invalid_id_token')
     const header = JSON.parse(Buffer.from(headerPart, 'base64url').toString('utf8')) as { alg?: string, kid?: string }
-    const claims = JSON.parse(Buffer.from(payloadPart, 'base64url').toString('utf8')) as { iss?: string, aud?: string | string[], exp?: number, nonce?: string, id?: number | string, given_name?: string, family_name?: string, preferred_username?: string, picture?: string }
+    const claims = JSON.parse(Buffer.from(payloadPart, 'base64url').toString('utf8')) as { iss?: string, aud?: string | string[], exp?: number, nonce?: string, id?: number | string, sub?: number | string, name?: string, given_name?: string, family_name?: string, preferred_username?: string, picture?: string }
     const keysResponse = await fetch('https://oauth.telegram.org/.well-known/jwks.json')
     const keysPayload = await keysResponse.json() as { keys?: Array<crypto.JsonWebKey & { kid?: string }> }
     const key = keysPayload.keys?.find((item) => item.kid === header.kid)
     const validSignature = header.alg === 'RS256' && key && crypto.verify('RSA-SHA256', Buffer.from(`${headerPart}.${payloadPart}`), crypto.createPublicKey({ key, format: 'jwk' }), Buffer.from(signaturePart, 'base64url'))
     const audience = Array.isArray(claims.aud) ? claims.aud.includes(config.clientId) : claims.aud === config.clientId
-    if (!validSignature || claims.iss !== 'https://oauth.telegram.org' || !audience || !claims.exp || claims.exp * 1000 < Date.now() || claims.nonce !== pending.nonce || !claims.id || !claims.given_name) throw new Error('invalid_id_token')
-    const login = await telegramCustomToken({ id: Number(claims.id), first_name: claims.given_name, last_name: claims.family_name, username: claims.preferred_username, photo_url: claims.picture })
+    const telegramId = claims.id ?? claims.sub
+    const telegramName = claims.given_name ?? claims.name ?? claims.preferred_username
+    if (!validSignature || claims.iss !== 'https://oauth.telegram.org' || !audience || !claims.exp || claims.exp * 1000 < Date.now() || claims.nonce !== pending.nonce || !telegramId || !telegramName || !Number.isFinite(Number(telegramId))) throw new Error('invalid_id_token')
+    const login = await telegramCustomToken({ id: Number(telegramId), first_name: telegramName, last_name: claims.family_name, username: claims.preferred_username, photo_url: claims.picture })
     const ticket = randomUrlToken()
     await db.collection('telegramLoginTickets').doc(ticket).set({ ...login, createdAt: new Date().toISOString(), expiresAt: Date.now() + 2 * 60 * 1000, usedAt: null })
-    return res.redirect(`${appUrl}/telegram?ticket=${encodeURIComponent(ticket)}`)
+    return res.redirect(`${appUrl}/telegram?ticket=${encodeURIComponent(ticket)}${pending.popup ? '&popup=1' : ''}`)
   } catch (callbackError) {
     console.error('Telegram OIDC login failed', callbackError)
     return res.redirect(`${appUrl}/login?telegram_error=failed`)
   }
-})
+}
+
+// Existing BotFather setups used `/oidc`; newer ones used `/oidc/callback`.
+// Accept both exact redirect URIs so either configuration completes safely.
+router.get('/telegram/oidc', telegramOidcCallback)
+router.get('/telegram/oidc/callback', telegramOidcCallback)
 
 router.post('/telegram/complete', async (req, res) => {
   try {

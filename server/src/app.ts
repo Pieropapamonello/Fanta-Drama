@@ -22,6 +22,9 @@ const app = express()
 
 app.use(helmet({
   crossOriginEmbedderPolicy: false,
+  // Telegram Login communicates the result from its authorization popup back
+  // to the PWA. `same-origin` would sever window.opener during that flow.
+  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],

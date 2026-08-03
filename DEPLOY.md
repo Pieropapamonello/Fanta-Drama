@@ -13,7 +13,7 @@ git push -u origin main
 
 -2) Variabili d'ambiente su Render
 - `TELEGRAM_BOT_TOKEN` = token dal BotFather
-- `TELEGRAM_LOGIN_CLIENT_ID` e `TELEGRAM_LOGIN_CLIENT_SECRET` = BotFather > Bot Settings > Web Login. Registra anche `https://fanta-drama.onrender.com/api/auth/telegram/oidc/callback` fra gli Allowed URLs.
+- `TELEGRAM_LOGIN_CLIENT_ID` e `TELEGRAM_LOGIN_CLIENT_SECRET` = BotFather > Bot Settings > Web Login. Registra `https://fanta-drama.onrender.com/api/auth/telegram/oidc` fra gli URL di reindirizzamento. Anche il precedente `/api/auth/telegram/oidc/callback` resta supportato.
 
 3) Segreti GitHub necessari per GitHub Actions
 - `RENDER_SERVICE_ID` = l'ID del servizio Render (lo trovi nella dashboard di Render)

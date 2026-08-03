@@ -40,37 +40,21 @@ export async function sendTelegramMessage(chatId: string | number, text: string,
   if (!response.ok) throw new Error(`Telegram sendMessage failed: ${response.status}`)
 }
 
-async function sendEmail(email: string, payload: NotificationPayload) {
-  const apiKey = process.env.RESEND_API_KEY
-  const from = process.env.NOTIFICATION_FROM
-  if (!apiKey || !from) return { channel: 'email', status: 'pending_email_provider' }
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
-    body: JSON.stringify({
-      from,
-      to: [email],
-      subject: `FantaDrama · ${payload.title}`,
-      html: `<div style="font-family:Arial,sans-serif"><h2>${payload.title}</h2><p>${payload.message}</p><p><a href="${appUrl}${payload.path ?? '/dashboard'}">Apri FantaDrama</a></p></div>`
-    })
-  })
-  return { channel: 'email', status: response.ok ? 'sent' : 'failed' }
-}
-
 async function sendDevicePush(userId: string, payload: NotificationPayload) {
   const subscriptions = await db.collection('pushSubscriptions').where('userId', '==', userId).get()
   if (subscriptions.empty) return { channel: 'device', status: 'pending_permission' }
-  const latestByPlatform = new Map<string, FirebaseFirestore.QueryDocumentSnapshot>()
+  const uniqueTokens = new Map<string, FirebaseFirestore.QueryDocumentSnapshot>()
   subscriptions.docs.forEach((subscription) => {
-    const platform = String(subscription.data().platform ?? 'web')
-    const current = latestByPlatform.get(platform)
-    if (!current || String(subscription.data().updatedAt ?? '') > String(current.data().updatedAt ?? '')) latestByPlatform.set(platform, subscription)
+    const token = String(subscription.data().token ?? '')
+    if (token) uniqueTokens.set(token, subscription)
   })
-  const deliveries = await Promise.all([...latestByPlatform.values()].map(async (subscription) => {
+  const deliveries = await Promise.all([...uniqueTokens.values()].map(async (subscription) => {
     const token = String(subscription.data().token ?? '')
     if (!token) return 'failed'
     try {
-      await getMessaging(firebaseApp).send({ token, data: { title: payload.title, body: payload.message, path: payload.path ?? '/dashboard', url: `${appUrl}${payload.path ?? '/dashboard'}` }, webpush: { notification: { title: payload.title, body: payload.message, icon: '/icons/fantadrama-icon.svg' }, fcmOptions: { link: `${appUrl}${payload.path ?? '/dashboard'}` } } })
+      const path = payload.path ?? '/dashboard'
+      const url = `${appUrl}${path}`
+      await getMessaging(firebaseApp).send({ token, data: { title: payload.title, body: payload.message, path, url }, webpush: { headers: { Urgency: 'high' }, notification: { title: payload.title, body: payload.message, icon: '/icons/fantadrama-icon.svg', data: { path, url } }, fcmOptions: { link: url } } })
       return 'sent'
     } catch (error: any) {
       if (String(error?.code ?? '').includes('registration-token-not-registered')) await subscription.ref.delete()

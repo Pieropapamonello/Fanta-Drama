@@ -27,9 +27,15 @@ services:
         sync: false
       - key: VITE_FIREBASE_APP_ID
         sync: false
+      - key: VITE_FIREBASE_VAPID_KEY
+        sync: false
       - key: VITE_TELEGRAM_BOT_USERNAME
         value: FantaDrama1_bot
       - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: TELEGRAM_WEBHOOK_SECRET
         generateValue: true
+      - key: TELEGRAM_LOGIN_CLIENT_ID
+        sync: false
+      - key: TELEGRAM_LOGIN_CLIENT_SECRET
+        sync: false

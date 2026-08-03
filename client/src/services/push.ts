@@ -9,10 +9,21 @@ function workerUrl() {
     projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
     messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
     appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
-    v: '2'
+    v: '3'
   })
   return `/firebase-push-sw.js?${params.toString()}`
 }
+
+function deviceInstallationId() {
+  const key = 'fd_push_device_id'
+  const saved = localStorage.getItem(key)
+  if (saved) return saved
+  const value = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  localStorage.setItem(key, value)
+  return value
+}
+
+let pushWorkerRegistration: ServiceWorkerRegistration | null = null
 
 async function waitForActiveWorker(registration: ServiceWorkerRegistration) {
   if (registration.active) return registration
@@ -44,9 +55,10 @@ async function registerDevicePush(requestPermission: boolean) {
   try {
     const registration = await navigator.serviceWorker.register(workerUrl(), { scope: '/firebase-push/' })
     await waitForActiveWorker(registration)
+    pushWorkerRegistration = registration
     const token = await getToken(getMessaging(firebaseApp), { vapidKey, serviceWorkerRegistration: registration })
     if (!token) return { ok: false, message: 'Non riesco a registrare questo dispositivo alle notifiche.' }
-    await api.post('/profile/push-subscriptions', { token, platform: navigator.userAgent.slice(0, 40) })
+    await api.post('/profile/push-subscriptions', { token, platform: navigator.userAgent.slice(0, 120), deviceId: deviceInstallationId() })
     return { ok: true, message: 'Notifiche del dispositivo attive su questo telefono.' }
   } catch (error: any) {
     const code = String(error?.code ?? '')
@@ -79,7 +91,11 @@ export async function listenToForegroundPush() {
   return onMessage(getMessaging(firebaseApp), (payload) => {
     const title = payload.notification?.title ?? payload.data?.title ?? 'FantaDrama'
     const body = payload.notification?.body ?? payload.data?.body ?? 'Hai un nuovo aggiornamento.'
-    void navigator.serviceWorker.ready.then((registration) => registration.showNotification(title, { body, icon: '/icons/fantadrama-icon.svg', data: { path: payload.data?.path ?? '/dashboard' } }))
+    const path = payload.data?.path ?? '/dashboard'
+    void (pushWorkerRegistration ? Promise.resolve(pushWorkerRegistration) : navigator.serviceWorker.getRegistration('/firebase-push/')).then((registration) => {
+      if (registration) return registration.showNotification(title, { body, icon: '/icons/fantadrama-icon.svg', data: { path, url: new URL(path, window.location.origin).href } })
+      return navigator.serviceWorker.ready.then((fallback) => fallback.showNotification(title, { body, icon: '/icons/fantadrama-icon.svg', data: { path, url: new URL(path, window.location.origin).href } }))
+    })
     window.dispatchEvent(new Event('fd:notifications-changed'))
   })
 }

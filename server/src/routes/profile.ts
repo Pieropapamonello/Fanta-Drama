@@ -14,7 +14,7 @@ const profileSchema = z.object({
   notificationPreference: z.enum(['IN_APP', 'TELEGRAM', 'EMAIL', 'BOTH', 'ALL']).optional(),
   notificationChannels: z.array(z.enum(['DEVICE', 'TELEGRAM'])).optional(),
 })
-const pushSubscriptionSchema = z.object({ token: z.string().min(40).max(4096), platform: z.string().max(40).optional() })
+const pushSubscriptionSchema = z.object({ token: z.string().min(40).max(4096), platform: z.string().max(120).optional(), deviceId: z.string().min(8).max(120).optional() })
 const pushDiagnosticSchema = z.object({ code: z.string().max(120).optional(), message: z.string().max(500).optional() })
 
 function channelsFromLegacy(preference: string) {
@@ -94,15 +94,18 @@ router.post('/notifications/read', requireAuth, async (req: AuthRequest, res) =>
 router.post('/push-subscriptions', requireAuth, async (req: AuthRequest, res) => {
   try {
     const data = pushSubscriptionSchema.parse(req.body)
-    const existing = await db.collection('pushSubscriptions').where('token', '==', data.token).limit(1).get()
-    const ref = existing.empty ? db.collection('pushSubscriptions').doc() : existing.docs[0].ref
-    await ref.set({ userId: req.userId!, token: data.token, platform: data.platform ?? 'web', updatedAt: new Date().toISOString() }, { merge: true })
+    const [existing, sameUser] = await Promise.all([
+      db.collection('pushSubscriptions').where('token', '==', data.token).limit(1).get(),
+      db.collection('pushSubscriptions').where('userId', '==', req.userId!).get()
+    ])
+    const sameDevice = data.deviceId ? sameUser.docs.find((item) => item.data()?.deviceId === data.deviceId) : undefined
+    const ref = !existing.empty ? existing.docs[0].ref : sameDevice?.ref ?? db.collection('pushSubscriptions').doc()
+    await ref.set({ userId: req.userId!, token: data.token, platform: data.platform ?? 'web', deviceId: data.deviceId ?? null, updatedAt: new Date().toISOString() }, { merge: true })
     // Device permission and a valid FCM token mean this channel is explicitly
     // usable.  Keep profile preferences aligned so a user does not have to
     // press both "Attiva avvisi" and a second channel-selection button.
     await db.collection('users').doc(req.userId!).set({ notificationChannels: FieldValue.arrayUnion('DEVICE'), updatedAt: new Date().toISOString() }, { merge: true })
-    const sameDevice = await db.collection('pushSubscriptions').where('userId', '==', req.userId!).get()
-    const stale = sameDevice.docs.filter((item) => item.id !== ref.id && String(item.data().platform ?? 'web') === String(data.platform ?? 'web'))
+    const stale = data.deviceId ? sameUser.docs.filter((item) => item.id !== ref.id && item.data()?.deviceId === data.deviceId) : []
     await Promise.all(stale.map((item) => item.ref.delete()))
     return res.json({ ok: true })
   } catch (error: any) { return res.status(400).json({ error: error.message ?? 'invalid_push_subscription' }) }

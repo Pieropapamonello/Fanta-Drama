@@ -9,6 +9,15 @@ export default function TelegramLogin() {
   const [message, setMessage] = useState('Verifica dell’accesso Telegram…')
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const popupTicket = params.get('ticket')
+    if (params.get('popup') === '1' && popupTicket && window.opener) {
+      window.opener.postMessage({ type: 'fd:telegram-login-ticket', ticket: popupTicket }, window.location.origin)
+      window.opener.focus()
+      setMessage('Accesso autorizzato. Ritorno a FantaDrama…')
+      const timer = window.setTimeout(() => window.close(), 350)
+      return () => window.clearTimeout(timer)
+    }
     const completeLogin = async () => {
       const payload = Object.fromEntries(new URLSearchParams(window.location.search).entries())
       const response = payload.ticket
