@@ -20,6 +20,16 @@ const schema = z.object({
   password: z.string().min(8)
 })
 
+function emailLoginErrorMessage(error: any) {
+  const code = String(error?.code ?? error?.response?.data?.error ?? '')
+  if (['auth/invalid-credential', 'auth/invalid-login-credentials', 'auth/wrong-password', 'auth/user-not-found'].includes(code)) return 'E-mail o password non corretti. Controlla di usare lo stesso metodo con cui ti sei registrato.'
+  if (code === 'auth/too-many-requests') return 'Troppi tentativi ravvicinati. Attendi qualche minuto, poi riprova oppure reimposta la password da Firebase.'
+  if (code === 'auth/network-request-failed') return 'Non riesco a raggiungere Firebase. Controlla la connessione e riprova.'
+  if (code === 'auth/operation-not-allowed') return 'L’accesso e-mail non è attivo nel progetto Firebase. Va abilitato in Authentication → Sign-in method.'
+  if (code === 'missing_token' || code === 'invalid_token') return 'L’accesso è riuscito, ma il token non è stato accettato dal server. Riprova una volta: ora l’app lo salva prima di aprire il profilo.'
+  return 'L’accesso non è stato completato. Riprova tra poco.'
+}
+
 export default function Login() {
   const { register, handleSubmit } = useForm({ resolver: zodResolver(schema) })
   const navigate = useNavigate()
@@ -71,15 +81,15 @@ export default function Login() {
     if (emailLoading) return
     setEmailLoading(true); setEmailMessage('')
     try {
-      const credential = await signInWithEmailAndPassword(firebaseAuth, data.email, data.password)
-      const token = await credential.user.getIdToken()
-      const bootstrap = await api.post('/auth/bootstrap')
+      const credential = await signInWithEmailAndPassword(firebaseAuth, data.email.trim(), data.password)
+      const token = await credential.user.getIdToken(true)
       localStorage.setItem('fd_token', token)
       setAuthToken(token)
+      const bootstrap = await api.post('/auth/bootstrap')
       navigate(bootstrap.data.user?.profileCompleted ? afterLoginPath() : '/profile/setup')
     } catch (err: any) {
       console.error(err)
-      setEmailMessage('Email o password non corretti. Controlla i dati e riprova.')
+      setEmailMessage(emailLoginErrorMessage(err))
     } finally { setEmailLoading(false) }
   }
   return (

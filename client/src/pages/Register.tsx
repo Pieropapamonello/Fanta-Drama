@@ -22,11 +22,11 @@ export default function Register() {
   const onSubmit = async (data: any) => {
     setError('')
     try {
-      const credential = await createUserWithEmailAndPassword(firebaseAuth, data.email, data.password)
-      const token = await credential.user.getIdToken()
-      const bootstrap = await api.post('/auth/bootstrap', { username: data.username })
+      const credential = await createUserWithEmailAndPassword(firebaseAuth, data.email.trim(), data.password)
+      const token = await credential.user.getIdToken(true)
       localStorage.setItem('fd_token', token)
       setAuthToken(token)
+      const bootstrap = await api.post('/auth/bootstrap', { username: data.username })
       navigate(bootstrap.data.user?.profileCompleted ? '/dashboard' : '/profile/setup')
     } catch (err: any) {
       console.error(err)
