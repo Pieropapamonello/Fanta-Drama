@@ -170,15 +170,30 @@ export async function finalizeAuction(auctionId: string) {
   return result
 }
 
-export async function refreshAuctions() {
-  const snapshot = await db.collection('auctions').where('status', '==', 'OPEN').get()
+async function finalizeDueAuctions(snapshot: FirebaseFirestore.QuerySnapshot) {
   const due = snapshot.docs.filter((auction) => new Date(String(auction.data().closesAt)).getTime() <= Date.now())
   await Promise.allSettled(due.map((auction) => finalizeAuction(auction.id)))
   return due.length
 }
 
+/** Limited global sweep for background maintenance only. */
+export async function refreshAuctions() {
+  const snapshot = await db.collection('auctions').where('status', '==', 'OPEN').limit(150).get()
+  return finalizeDueAuctions(snapshot)
+}
+
+export async function refreshEventAuctions(eventId: string) {
+  const snapshot = await db.collection('auctions').where('eventId', '==', eventId).get()
+  return finalizeDueAuctions(snapshot)
+}
+
+export async function refreshGroupAuctions(groupId: string) {
+  const snapshot = await db.collection('auctions').where('groupId', '==', groupId).get()
+  return finalizeDueAuctions(snapshot)
+}
+
 export async function auctionsForEvent(eventId: string, userId: string) {
-  await refreshAuctions()
+  await refreshEventAuctions(eventId)
   const wallet = await ensureEventWallet(eventId, userId)
   const [auctions, purchases] = await Promise.all([db.collection('auctions').where('eventId', '==', eventId).get(), db.collection('eventCardPurchases').where('eventId', '==', eventId).get()])
   const owned = new Set(purchases.docs.filter((purchase) => purchase.data().userId === userId).map((purchase) => String(purchase.data().auctionId)))

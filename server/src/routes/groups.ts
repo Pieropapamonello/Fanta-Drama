@@ -5,7 +5,7 @@ import { FieldValue } from 'firebase-admin/firestore'
 import { requireAuth, AuthRequest } from '../middleware/auth'
 import { db, documentData } from '../services/firebase'
 import { isPlatformAdmin } from '../services/platform-admin'
-import { ensureWallet, refreshAuctions } from '../services/auctions'
+import { ensureWallet, refreshGroupAuctions } from '../services/auctions'
 import { notifyGroupMembers } from '../services/notifications'
 import { starterCards } from '../data/starter-content'
 
@@ -148,7 +148,7 @@ router.post('/:id/messages', requireAuth, async (req: AuthRequest, res) => {
 router.get('/:id/market-auctions', requireAuth, async (req: AuthRequest, res) => {
   const { group, allowed } = await canAccessGroup(req.params.id, req.userId!)
   if (!allowed) return res.status(404).json({ error: 'not_found' })
-  await refreshAuctions()
+  await refreshGroupAuctions(group.id)
   const [auctions, wallet] = await Promise.all([db.collection('auctions').where('groupId', '==', group.id).get(), ensureWallet(req.userId!)])
   return res.json({ wallet: wallet.data(), auctions: auctions.docs.filter((auction) => auction.data().marketScope === 'GROUP').map((auction) => documentData(auction.id, auction.data() as Record<string, unknown>)) })
 })
