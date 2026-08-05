@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { CheckCircle2, Clock3, Gavel, ImagePlus, Play, Search, ShieldQuestion, ShoppingBag, X } from 'lucide-react'
 import api from '../services/api'
 import DramaCard from './DramaCard'
+import CardExplorer, { playEpicSound, startEpicAmbience, stopEpicAmbience } from './CardExplorer'
 
 type Props = { eventId: string; phase?: string; acquisitionMode?: 'AUCTION' | 'DIRECT'; closesAt?: string; onSaved?: () => void }
 
@@ -26,6 +27,7 @@ export default function PredictionForm({ eventId, phase, acquisitionMode = 'AUCT
   const [working, setWorking] = useState('')
   const [currentUserId, setCurrentUserId] = useState('')
   const [selectedCard, setSelectedCard] = useState<any>(null)
+  const [explorerIndex, setExplorerIndex] = useState<number | null>(null)
   const [playCard, setPlayCard] = useState<any>(null)
   const [playNote, setPlayNote] = useState('')
   const [proofImageUrl, setProofImageUrl] = useState('')
@@ -62,7 +64,7 @@ export default function PredictionForm({ eventId, phase, acquisitionMode = 'AUCT
   }, [eventId])
 
   useEffect(() => {
-    if (!selectedCard && !playCard && !appealTarget) return
+    if (!selectedCard && !playCard && !appealTarget && explorerIndex === null) return
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     const frame = window.requestAnimationFrame(() => dialogRef.current?.scrollTo({ top: 0 }))
@@ -70,15 +72,15 @@ export default function PredictionForm({ eventId, phase, acquisitionMode = 'AUCT
       window.cancelAnimationFrame(frame)
       document.body.style.overflow = previousOverflow
     }
-  }, [selectedCard, playCard, appealTarget])
+  }, [selectedCard, playCard, appealTarget, explorerIndex])
 
   const openCard = (card: any) => {
     const minimum = card.leaderId ? Number(card.currentBid) + Number(card.minIncrement) : Number(card.openingBid)
-    setAmount(String(minimum)); setSelectedCard(card); setMessage('')
+    setAmount(String(minimum)); setExplorerIndex(Math.max(0, explorerCards.findIndex((item) => item.id === card.id))); setMessage(''); startEpicAmbience(); playEpicSound('open')
   }
   const bid = async (card: any) => {
     const offer = Number(amount); setWorking(`bid-${card.id}`); setMessage('')
-    try { await api.post(`/auctions/${card.id}/bid`, { amount: offer }); setSelectedCard(null); setMessage(`Offerta di ${offer} crediti registrata.`); await load(); onSaved?.() }
+    try { await api.post(`/auctions/${card.id}/bid`, { amount: offer }); setSelectedCard(null); setExplorerIndex(null); stopEpicAmbience(); setMessage(`Offerta di ${offer} crediti registrata.`); await load(); onSaved?.() }
     catch (error: any) {
       const code = error.response?.data?.error; const minimum = card.leaderId ? card.currentBid + card.minIncrement : card.openingBid
       setMessage(code === 'insufficient_credits' ? 'Non hai abbastanza crediti disponibili.' : code === 'bid_too_low' ? `Devi offrire almeno ${minimum} crediti.` : code === 'auction_closed' ? 'L asta e gia chiusa.' : 'Non riesco a registrare il rilancio.')
@@ -86,7 +88,7 @@ export default function PredictionForm({ eventId, phase, acquisitionMode = 'AUCT
   }
   const buy = async (card: any) => {
     setWorking(`buy-${card.id}`); setMessage('')
-    try { await api.post(`/auctions/${card.id}/buy`); setSelectedCard(null); setMessage(`${card.title} acquistata: vale solo per questo evento.`); await load(); onSaved?.() }
+    try { await api.post(`/auctions/${card.id}/buy`); setSelectedCard(null); setExplorerIndex(null); stopEpicAmbience(); setMessage(`${card.title} acquistata: vale solo per questo evento.`); await load(); onSaved?.() }
     catch (error: any) {
       const code = error.response?.data?.error
       setMessage(code === 'insufficient_credits' ? 'Non hai abbastanza crediti disponibili.' : code === 'direct_purchase_closed' ? 'Gli acquisti per questo evento sono chiusi.' : 'Non riesco a completare l acquisto.')
@@ -154,6 +156,7 @@ export default function PredictionForm({ eventId, phase, acquisitionMode = 'AUCT
   const matchesSearch = (card: any) => !searchText || [card.title, card.description, card.rarity, card.type].some((value) => String(value ?? '').toLocaleLowerCase('it-IT').includes(searchText))
   const playableCards = cards.filter((card) => ownership(card) && !claimFor(card) && matchesSearch(card))
   const marketCards = cards.filter((card) => !ownership(card) && matchesSearch(card))
+  const explorerCards = cards.filter(matchesSearch)
   const selectedClaim = selectedCard ? claimFor(selectedCard) : null
   const verificationGroups = Object.values(claims.reduce((groups: Record<string, any>, claim: any) => {
     const key = String(claim.cardKey || claim.auctionId)
@@ -168,12 +171,21 @@ export default function PredictionForm({ eventId, phase, acquisitionMode = 'AUCT
     return { ...group, canonical, status, confirms, denies }
   }).sort((a: any, b: any) => (a.status === 'PENDING' ? -1 : 1) - (b.status === 'PENDING' ? -1 : 1)) as any[]
   const visibleVerifications = verificationGroups.filter((group) => reviewTab === 'ALL' || group.status === reviewTab)
+  const explorerAction = (card: any) => {
+    const claim = claimFor(card)
+    if (claim) return <p className="explorer-action-status">Carta {claimLabel(claim.status).toLowerCase()} · {claim.spentCredits ?? claim.rewardCredits ?? cardValue(card)} punti.</p>
+    if (ownership(card)) return <button type="button" className="btn" disabled={!live} onClick={() => { setExplorerIndex(null); stopEpicAmbience(); setPlayCard(card) }}><Play size={17} />{live ? `Gioca carta - ${cardValue(card)} punti` : finished ? 'Evento concluso' : 'Potrai giocarla durante l evento'}</button>
+    if (direct && card.status === 'AVAILABLE' && !finished) return <button type="button" className="btn" disabled={working === `buy-${card.id}`} onClick={() => void buy(card)}><ShoppingBag size={17} />{working === `buy-${card.id}` ? 'Acquisto...' : `Acquista per ${card.directPrice} crediti`}</button>
+    if (!direct && card.status === 'OPEN' && !finished) return <div className="explorer-bid-action"><label>La tua offerta<input className="input" type="number" min={card.leaderId ? card.currentBid + card.minIncrement : card.openingBid} value={amount} onChange={(event) => setAmount(event.target.value)} /></label><small>Crediti disponibili: {credits}</small><button type="button" className="btn" disabled={working === `bid-${card.id}`} onClick={() => void bid(card)}><Gavel size={17} />{working === `bid-${card.id}` ? 'Invio...' : 'Fai offerta'}</button></div>
+    return <p className="explorer-action-status">{finished ? 'Evento concluso: il mercato è chiuso.' : direct ? 'Gli acquisti per questa carta sono chiusi.' : card.status === 'WON' ? `Carta assegnata a ${card.ownerName}.` : 'Asta terminata senza offerte.'}</p>
+  }
 
   return <section className="prediction-panel auction-panel" id="mercato-evento">
     <div><p className="eyebrow">Mercato del caos</p><h3>{finished ? 'Mercato concluso' : direct ? 'Acquisto diretto' : 'Aste delle carte'}</h3><p><b>{credits}</b> crediti disponibili per questo evento {wallet?.reserved ? `- ${wallet.reserved} impegnati nelle offerte` : ''}</p><p className="claim-help">{finished ? 'L evento e terminato: le carte restano consultabili, ma non possono piu essere acquistate o giocate.' : direct ? 'Ogni partecipante puo acquistare la propria copia. Ogni copia giocata vale i crediti spesi e non puo essere riutilizzata.' : 'Ogni carta e esclusiva: chi la vince puo giocarla una sola volta e ottiene punti pari all offerta vincente.'}</p>{live && <p className="claim-help">Tocca una carta acquistata e premi Gioca carta: due giocatori devono approvarla, oppure decide subito l amministratore.</p>}</div>
     <section className="owned-event-cards" id="mie-carte"><div className="market-section-heading"><div><p className="eyebrow">Il tuo mazzo evento</p><h4>Carte acquistate da giocare</h4></div><span>{playableCards.length}</span></div>{playableCards.length ? <div className="drama-card-grid event-card-grid">{playableCards.map(renderCard)}</div> : <p className="market-empty">Non hai carte ancora da giocare in questo evento.</p>}</section>
     <section className="event-market-cards"><div className="market-section-heading"><div><p className="eyebrow">Catalogo evento</p><h4>{finished ? 'Carte dell evento' : 'Carte da acquistare o puntare'}</h4></div><span>{marketCards.length}</span></div><label className="event-card-search"><Search size={17} /><input value={cardQuery} onChange={(event) => setCardQuery(event.target.value)} placeholder="Cerca una carta dell'evento..." aria-label="Cerca una carta dell'evento" />{cardQuery && <button type="button" onClick={() => setCardQuery('')} aria-label="Cancella ricerca"><X size={15} /></button>}</label>{marketCards.length ? <div className="drama-card-grid event-card-grid">{marketCards.map(renderCard)}</div> : <p className="market-empty">Nessuna carta corrisponde alla ricerca.</p>}</section>
 
+    {explorerIndex !== null && explorerCards.length > 0 && <CardExplorer cards={explorerCards} initialIndex={explorerIndex} onClose={() => { stopEpicAmbience(); setExplorerIndex(null) }} renderAction={explorerAction} navigationMode />}
     {selectedCard && <div className="auction-offer-backdrop" role="presentation" onMouseDown={() => !working && setSelectedCard(null)}><section ref={dialogRef} role="dialog" aria-modal="true" aria-label={selectedCard.title} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="participant-close" onClick={() => setSelectedCard(null)} disabled={Boolean(working)}>x</button>{selectedCard.imageUrl && <img src={selectedCard.imageUrl} alt="" />}<p className="eyebrow">{selectedCard.rarity} - {direct ? 'Acquisto diretto' : 'Asta esclusiva'}</p><h3>{selectedCard.title}</h3><p>{selectedCard.description}</p>{selectedClaim ? <div className="auction-offer-form"><span className="offer-current">Carta giocata - {claimLabel(selectedClaim.status)} - valore {selectedClaim.spentCredits ?? selectedClaim.rewardCredits ?? cardValue(selectedCard)} punti</span><button type="button" className="btn btn-ghost" disabled={working === `appeal-${selectedClaim.id}`} onClick={() => setAppealTarget(selectedClaim)}><ShieldQuestion size={16} /> Chiedi intervento admin</button></div> : ownership(selectedCard) ? <div className="auction-offer-form"><span className="offer-current">Valore della carta: {cardValue(selectedCard)} punti. Dopo averla giocata non potra piu essere usata.</span><button type="button" className="btn" disabled={!live} onClick={() => { setSelectedCard(null); setPlayCard(selectedCard) }}><Play size={16} />{live ? `Gioca carta - ${cardValue(selectedCard)} punti` : finished ? 'Evento concluso' : 'Potrai giocarla durante l evento'}</button></div> : direct && selectedCard.status === 'AVAILABLE' && !finished ? <div className="auction-offer-form"><span className="offer-current">Prezzo e valore: {selectedCard.directPrice} crediti / punti - disponibili {credits}</span><button type="button" className="btn" disabled={working === `buy-${selectedCard.id}`} onClick={() => void buy(selectedCard)}><ShoppingBag size={16} />{working === `buy-${selectedCard.id}` ? 'Acquisto...' : `Acquista per ${selectedCard.directPrice} crediti`}</button></div> : !direct && selectedCard.status === 'OPEN' && !finished ? <div className="auction-offer-form"><label>La tua offerta<input className="input" type="number" min={selectedCard.leaderId ? selectedCard.currentBid + selectedCard.minIncrement : selectedCard.openingBid} value={amount} onChange={(event) => setAmount(event.target.value)} /></label><small>Crediti disponibili: {credits} - se vinci, la carta varra l offerta vincente.</small><button type="button" className="btn" disabled={working === `bid-${selectedCard.id}`} onClick={() => void bid(selectedCard)}><Gavel size={16} />{working === `bid-${selectedCard.id}` ? 'Invio...' : 'Fai offerta'}</button></div> : <p className="profile-error">{finished ? 'L evento e concluso: il mercato non accetta piu acquisti o offerte.' : direct ? 'Gli acquisti per questa carta sono chiusi.' : selectedCard.status === 'WON' ? `Carta assegnata a ${selectedCard.ownerName}.` : 'Asta terminata senza offerte.'}</p>}</section></div>}
 
     {playCard && <div className="auction-offer-backdrop" role="presentation" onMouseDown={() => !working && setPlayCard(null)}><section ref={dialogRef} className="play-proof-dialog" role="dialog" aria-modal="true" aria-label="Gioca carta" onMouseDown={(event) => event.stopPropagation()}><button type="button" className="participant-close" onClick={() => setPlayCard(null)} disabled={Boolean(working)}>x</button>{playCard.imageUrl && <img src={playCard.imageUrl} alt="" />}<p className="eyebrow">Gioca una carta</p><h3>{playCard.title}</h3><p>Racconta alla crew cosa e successo. Puoi allegare una foto o un link video: la prova e facoltativa, ma rende la verifica piu chiara.</p><label>Dettaglio dell accaduto<textarea className="input" value={playNote} maxLength={500} onChange={(event) => setPlayNote(event.target.value)} placeholder="Es. e successo davvero durante la cena..." /></label><label className="proof-upload"><ImagePlus size={16} /> Allega foto<input type="file" accept="image/*" onChange={(event) => void uploadProof(event.target.files?.[0])} /></label>{proofImageUrl && <img className="proof-preview" src={proofImageUrl} alt="Prova allegata" />}<label>Link a video (facoltativo)<input className="input" type="url" value={proofVideoUrl} onChange={(event) => setProofVideoUrl(event.target.value)} placeholder="https://..." /></label><button type="button" className="btn" disabled={proofUploading || working === `play-${playCard.id}`} onClick={() => void play(playCard)}><Play size={16} />{proofUploading ? 'Carico foto...' : working === `play-${playCard.id}` ? 'Invio...' : `Gioca carta - ${cardValue(playCard)} punti`}</button></section></div>}
