@@ -26,6 +26,70 @@ async function eventAccess(eventId: string, userId: string) {
   return event
 }
 
+/**
+ * Plays an owned event card for its owner. The same operation is also used by
+ * the platform admin when a player asks for help during a live event, so the
+ * purchase, one-use rule and normal crew verification always remain intact.
+ */
+export async function playEventCard(event: FirebaseFirestore.DocumentSnapshot, userId: string, data: z.infer<typeof claimSchema>, playedByAdminId?: string) {
+  const eventData = event.data()
+  if (!eventData) throw new Error('event_not_found')
+  if (new Date(String(eventData.startsAt)).getTime() > Date.now() || new Date(String(eventData.endsAt)).getTime() < Date.now()) throw new Error('claim_not_available')
+
+  const ref = db.collection('cardClaims').doc()
+  const auctionRef = db.collection('auctions').doc(data.auctionId)
+  const directPurchaseRef = db.collection('eventCardPurchases').doc(Buffer.from(`${data.auctionId}\u0000${userId}`).toString('base64url'))
+  const claim = await db.runTransaction(async (transaction) => {
+    const [auctionSnapshot, purchaseSnapshot] = await Promise.all([transaction.get(auctionRef), transaction.get(directPurchaseRef)])
+    if (!auctionSnapshot.exists || auctionSnapshot.data()?.eventId !== event.id) throw new Error('auction_not_owned')
+    const auction = auctionSnapshot.data()!
+    const direct = auction.acquisitionMode === 'DIRECT'
+    let spentCredits = 0
+    const now = new Date().toISOString()
+    if (direct) {
+      if (!purchaseSnapshot.exists) throw new Error('auction_not_owned')
+      if (purchaseSnapshot.data()?.playedAt) throw new Error('card_already_played')
+      spentCredits = Number(purchaseSnapshot.data()?.price ?? auction.directPrice ?? 0)
+      if (spentCredits <= 0) throw new Error('invalid_card_cost')
+      transaction.update(directPurchaseRef, { playedAt: now, playedClaimId: ref.id, updatedAt: now })
+    } else {
+      if (auction.ownerId !== userId) throw new Error('auction_not_owned')
+      if (auction.playedAt) throw new Error('card_already_played')
+      spentCredits = Number(auction.currentBid ?? 0)
+      if (spentCredits <= 0) throw new Error('invalid_card_cost')
+      transaction.update(auctionRef, { playedAt: now, playedBy: userId, playedClaimId: ref.id, updatedAt: now })
+    }
+    const cardKey = String(auction.cardKey ?? `auction:${auctionSnapshot.id}`)
+    const autoApproved = await approveKnownEventCard(event.id, cardKey)
+    const value = {
+      eventId: event.id, groupId: eventData.groupId, auctionId: auctionSnapshot.id, cardKey, cardTitle: auction.title,
+      userId, note: data.note ?? '', proofImageUrl: data.proofImageUrl ?? null, proofVideoUrl: data.proofVideoUrl ?? null,
+      spentCredits: Math.round(spentCredits), status: autoApproved ? 'CONFIRMED' : 'PENDING',
+      ...(playedByAdminId ? { playedByAdmin: true, playedByAdminId } : {}),
+      ...(autoApproved ? { resolvedAt: now, resolvedAtBy: 'known_card_rule', autoApproved: true } : {
+        verificationReminderAt: new Date(Date.now() + 30 * 60_000).toISOString(),
+        adminReviewAt: new Date(Date.now() + 2 * 60 * 60_000).toISOString()
+      }),
+      createdAt: now, updatedAt: now
+    }
+    transaction.set(ref, value)
+    return value
+  })
+
+  if (claim.status === 'CONFIRMED') {
+    await rewardEventClaim(ref, claim)
+    runInBackground(notifyUser(userId, { kind: 'CLAIM_CONFIRMED', title: `Carta gia verificata - ${claim.cardTitle}`, message: `La carta era gia approvata dalla crew: ${claim.spentCredits} punti assegnati automaticamente.`, path: `/events/${event.id}`, actionLabel: 'Vedi classifica' }), 'Known claim notification')
+    return { claim: documentData(ref.id, claim), mergedWithExistingVerification: false }
+  }
+
+  const pendingClaims = await db.collection('cardClaims').where('eventId', '==', event.id).get()
+  const hasSamePending = pendingClaims.docs.some((item) => item.id !== ref.id && item.data()?.status === 'PENDING' && String(item.data()?.cardKey ?? '') === String(claim.cardKey))
+  if (hasSamePending) return { claim: documentData(ref.id, claim), mergedWithExistingVerification: true }
+  const telegramButtons = [[{ text: '✅ Approva', callback_data: `claim:${ref.id}:CONFIRM` }, { text: '❌ Contesta', callback_data: `claim:${ref.id}:DENY` }], [{ text: '🛡 Contatta admin', callback_data: `claim:${ref.id}:APPEAL` }]]
+  runInBackground(notifyEventParticipants(event.id, { kind: 'CLAIM_NEEDS_VOTES', title: `Carta giocata · ${claim.cardTitle}`, message: `Una carta da ${claim.spentCredits} punti attende due conferme. Apri l’evento per approvare o contestare.`, path: `/events/${event.id}`, actionLabel: 'Apri verifica carta', telegramButtons }), 'Claim vote notification')
+  return { claim: documentData(ref.id, claim), mergedWithExistingVerification: false }
+}
+
 function cardCost(claim: Record<string, unknown>, auction: Record<string, unknown> | undefined) {
   const paid = Number(claim.spentCredits ?? auction?.currentBid ?? auction?.directPrice ?? 0)
   return Number.isFinite(paid) && paid > 0 ? Math.round(paid) : 1
@@ -70,63 +134,7 @@ router.post('/event/:eventId', requireAuth, async (req: AuthRequest, res) => {
   try {
     const event = await eventAccess(req.params.eventId, req.userId!)
     if (!event) return res.status(404).json({ error: 'event_not_found' })
-    if (new Date(String(event.data()?.startsAt)).getTime() > Date.now() || new Date(String(event.data()?.endsAt)).getTime() < Date.now()) return res.status(409).json({ error: 'claim_not_available' })
-    const data = claimSchema.parse(req.body)
-    const ref = db.collection('cardClaims').doc()
-    const auctionRef = db.collection('auctions').doc(data.auctionId)
-    const directPurchaseRef = db.collection('eventCardPurchases').doc(Buffer.from(`${data.auctionId}\u0000${req.userId!}`).toString('base64url'))
-    const claim = await db.runTransaction(async (transaction) => {
-      const [auctionSnapshot, purchaseSnapshot] = await Promise.all([transaction.get(auctionRef), transaction.get(directPurchaseRef)])
-      if (!auctionSnapshot.exists || auctionSnapshot.data()?.eventId !== event.id) throw new Error('auction_not_owned')
-      const auction = auctionSnapshot.data()!
-      const direct = auction.acquisitionMode === 'DIRECT'
-      let spentCredits = 0
-      const now = new Date().toISOString()
-      if (direct) {
-        if (!purchaseSnapshot.exists) throw new Error('auction_not_owned')
-        if (purchaseSnapshot.data()?.playedAt) throw new Error('card_already_played')
-        spentCredits = Number(purchaseSnapshot.data()?.price ?? auction.directPrice ?? 0)
-        if (spentCredits <= 0) throw new Error('invalid_card_cost')
-        transaction.update(directPurchaseRef, { playedAt: now, playedClaimId: ref.id, updatedAt: now })
-      } else {
-        if (auction.ownerId !== req.userId!) throw new Error('auction_not_owned')
-        if (auction.playedAt) throw new Error('card_already_played')
-        spentCredits = Number(auction.currentBid ?? 0)
-        if (spentCredits <= 0) throw new Error('invalid_card_cost')
-        transaction.update(auctionRef, { playedAt: now, playedBy: req.userId!, playedClaimId: ref.id, updatedAt: now })
-      }
-      const cardKey = String(auction.cardKey ?? `auction:${auctionSnapshot.id}`)
-      const autoApproved = await approveKnownEventCard(event.id, cardKey)
-      const value = {
-        eventId: event.id, groupId: event.data()?.groupId, auctionId: auctionSnapshot.id, cardKey, cardTitle: auction.title,
-        userId: req.userId!, note: data.note ?? '', proofImageUrl: data.proofImageUrl ?? null, proofVideoUrl: data.proofVideoUrl ?? null,
-        spentCredits: Math.round(spentCredits), status: autoApproved ? 'CONFIRMED' : 'PENDING',
-        ...(autoApproved ? { resolvedAt: now, resolvedAtBy: 'known_card_rule', autoApproved: true } : {
-          verificationReminderAt: new Date(Date.now() + 30 * 60_000).toISOString(),
-          adminReviewAt: new Date(Date.now() + 2 * 60 * 60_000).toISOString()
-        }),
-        createdAt: now, updatedAt: now
-      }
-      transaction.set(ref, value)
-      return value
-    })
-    if (claim.status === 'CONFIRMED') {
-      // The crew already validated this card occurrence. Tell only the player
-      // who just used their own copy, otherwise every additional copy would
-      // create the same group alert again.
-      await rewardEventClaim(ref, claim)
-      runInBackground(notifyUser(req.userId!, { kind: 'CLAIM_CONFIRMED', title: `Carta gia verificata - ${claim.cardTitle}`, message: `La carta era gia approvata dalla crew: ${claim.spentCredits} punti assegnati automaticamente.`, path: `/events/${event.id}`, actionLabel: 'Vedi classifica' }), 'Known claim notification')
-    } else {
-      // Direct purchase lets several friends play their own copy. Keep just
-      // one pending alert for the shared occurrence; its final vote resolves
-      // every matching played copy in claim-voting.ts.
-      const pendingClaims = await db.collection('cardClaims').where('eventId', '==', event.id).get()
-      const hasSamePending = pendingClaims.docs.some((item) => item.id !== ref.id && item.data()?.status === 'PENDING' && String(item.data()?.cardKey ?? '') === String(claim.cardKey))
-      if (hasSamePending) return res.status(201).json({ claim: documentData(ref.id, claim), mergedWithExistingVerification: true })
-      const telegramButtons = [[{ text: '✅ Approva', callback_data: `claim:${ref.id}:CONFIRM` }, { text: '❌ Contesta', callback_data: `claim:${ref.id}:DENY` }], [{ text: '🛡 Contatta admin', callback_data: `claim:${ref.id}:APPEAL` }]]
-      runInBackground(notifyEventParticipants(event.id, { kind: 'CLAIM_NEEDS_VOTES', title: `Carta giocata · ${claim.cardTitle}`, message: `Una carta da ${claim.spentCredits} punti attende due conferme. Apri l’evento per approvare o contestare.`, path: `/events/${event.id}`, actionLabel: 'Apri verifica carta', telegramButtons }), 'Claim vote notification')
-    }
-    return res.status(201).json({ claim: documentData(ref.id, claim) })
+    return res.status(201).json(await playEventCard(event, req.userId!, claimSchema.parse(req.body)))
   } catch (error: any) { return res.status(400).json({ error: error.message ?? 'claim_failed' }) }
 })
 

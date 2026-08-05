@@ -5,7 +5,7 @@ import { db, documentData, firebaseAuth, groupRole } from '../services/firebase'
 import { closeAndScoreEvent } from '../services/scoring'
 import { grantPlatformAdmin, isPlatformAdmin, isValidAdminPassword, revokePlatformAdmin } from '../services/platform-admin'
 import { deleteDropboxAsset } from '../services/assets'
-import { rewardClaim } from './claims'
+import { playEventCard, rewardClaim } from './claims'
 import { starterCards } from '../data/starter-content'
 import { DEFAULT_DIRECT_CARD_PRICE } from '../services/auctions'
 
@@ -13,6 +13,7 @@ const router = Router()
 const passwordSchema = z.object({ password: z.string().min(1).max(256) })
 const mergeSchema = z.object({ primaryId: z.string().min(1), secondaryId: z.string().min(1) }).refine((value) => value.primaryId !== value.secondaryId)
 const appealDecisionSchema = z.object({ decision: z.enum(['CONFIRMED', 'DENIED']), note: z.string().trim().max(1000).optional() })
+const adminPlaySchema = z.object({ userId: z.string().min(1), auctionId: z.string().min(1), note: z.string().trim().max(500).optional() })
 
 async function requirePlatformAdmin(req: AuthRequest, res: any, next: any) {
   if (!req.userId || !await isPlatformAdmin(req.userId)) return res.status(403).json({ error: 'platform_admin_required' })
@@ -61,6 +62,46 @@ router.get('/overview', requireAuth, requirePlatformAdmin, async (_req, res) => 
     starterCards: starterCards.filter((card) => Boolean(card.imageUrl)).map((card) => ({ ...card, cardKey: `starter:${card.slug}`, directPrice: starterPrice.get(`starter:${card.slug}`) ?? DEFAULT_DIRECT_CARD_PRICE })),
     appeals: appeals.docs.map((appeal) => documentData(appeal.id, appeal.data() as Record<string, unknown>))
   })
+})
+
+router.get('/events/:id/unplayed-cards', requireAuth, requirePlatformAdmin, async (req: AuthRequest, res) => {
+  const event = await db.collection('events').doc(req.params.id).get()
+  if (!event.exists) return res.status(404).json({ error: 'event_not_found' })
+  const eventData = event.data()!
+  const participantIds = (eventData.participantIds as string[] | undefined) ?? []
+  const [auctions, purchases, profiles] = await Promise.all([
+    db.collection('auctions').where('eventId', '==', event.id).get(),
+    db.collection('eventCardPurchases').where('eventId', '==', event.id).get(),
+    Promise.all(participantIds.map((userId) => db.collection('users').doc(userId).get()))
+  ])
+  const users = new Map(profiles.map((profile) => [profile.id, profile.data() ?? {}]))
+  const auctionById = new Map(auctions.docs.map((auction) => [auction.id, auction.data()]))
+  const cards: Array<Record<string, unknown>> = []
+  purchases.docs.forEach((purchase) => {
+    const data = purchase.data(); const auction = auctionById.get(String(data.auctionId))
+    if (!auction || data.playedAt || !participantIds.includes(String(data.userId))) return
+    const user = users.get(String(data.userId)) ?? {}
+    cards.push({ auctionId: String(data.auctionId), userId: String(data.userId), username: user.username ?? 'Giocatore', avatar: user.avatar ?? null, title: auction.title ?? data.title ?? 'Carta evento', imageUrl: auction.imageUrl ?? null, description: auction.description ?? '', rarity: auction.rarity ?? 'COMMON', points: Number(data.price ?? auction.directPrice ?? 0), acquisitionMode: 'DIRECT' })
+  })
+  auctions.docs.forEach((auctionDoc) => {
+    const auction = auctionDoc.data(); const ownerId = String(auction.ownerId ?? '')
+    if (auction.acquisitionMode === 'DIRECT' || auction.playedAt || auction.status !== 'WON' || !ownerId || !participantIds.includes(ownerId)) return
+    const user = users.get(ownerId) ?? {}
+    cards.push({ auctionId: auctionDoc.id, userId: ownerId, username: user.username ?? 'Giocatore', avatar: user.avatar ?? null, title: auction.title ?? 'Carta evento', imageUrl: auction.imageUrl ?? null, description: auction.description ?? '', rarity: auction.rarity ?? 'COMMON', points: Number(auction.currentBid ?? 0), acquisitionMode: 'AUCTION' })
+  })
+  return res.json({ event: documentData(event.id, eventData as Record<string, unknown>), cards })
+})
+
+router.post('/events/:id/play-card', requireAuth, requirePlatformAdmin, async (req: AuthRequest, res) => {
+  try {
+    const event = await db.collection('events').doc(req.params.id).get()
+    if (!event.exists) return res.status(404).json({ error: 'event_not_found' })
+    const data = adminPlaySchema.parse(req.body)
+    const participantIds = (event.data()?.participantIds as string[] | undefined) ?? []
+    if (!participantIds.includes(data.userId)) return res.status(400).json({ error: 'user_not_event_participant' })
+    const result = await playEventCard(event, data.userId, { auctionId: data.auctionId, note: data.note || 'Carta giocata dall’amministratore su richiesta del giocatore.' }, req.userId!)
+    return res.status(201).json(result)
+  } catch (error: any) { return res.status(400).json({ error: error.message ?? 'admin_play_card_failed' }) }
 })
 
 router.post('/cards/:id/review', requireAuth, requirePlatformAdmin, async (req: AuthRequest, res) => {

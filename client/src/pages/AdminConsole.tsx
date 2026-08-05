@@ -12,6 +12,7 @@ export default function AdminConsole() {
   const [working, setWorking] = useState<string | null>(null)
   const [primaryUserId, setPrimaryUserId] = useState('')
   const [secondaryUserId, setSecondaryUserId] = useState('')
+  const [eventCards, setEventCards] = useState<{ event: any, cards: any[] } | null>(null)
 
   const load = useCallback(async () => {
     const status = await api.get('/admin/status')
@@ -36,6 +37,30 @@ export default function AdminConsole() {
     setWorking(`event-${id}`); setNotice('')
     try { await api.post(`/admin/events/${id}/close`); await load(); setNotice('Evento chiuso e punteggi aggiornati.') }
     catch (error: any) { setNotice(error.response?.data?.error || 'Non riesco a chiudere l evento.') }
+    finally { setWorking(null) }
+  }
+
+  const openEventCards = async (event: any) => {
+    setWorking(`event-cards-${event.id}`); setNotice('')
+    try {
+      const response = await api.get(`/admin/events/${event.id}/unplayed-cards`)
+      setEventCards({ event, cards: response.data.cards || [] })
+    } catch (error: any) { setNotice(error.response?.data?.error || 'Non riesco a caricare le carte non giocate.') }
+    finally { setWorking(null) }
+  }
+
+  const playEventCardForUser = async (card: any) => {
+    if (!eventCards) return
+    if (!window.confirm(`Giocare “${card.title}” per ${card.username}? La carta verra usata e passera alla normale verifica della crew.`)) return
+    const note = window.prompt('Nota facoltativa per la verifica della crew:', `Carta giocata dall amministratore per ${card.username}.`)
+    if (note === null) return
+    setWorking(`play-${card.userId}-${card.auctionId}`); setNotice('')
+    try {
+      const response = await api.post(`/admin/events/${eventCards.event.id}/play-card`, { userId: card.userId, auctionId: card.auctionId, note: note || undefined })
+      await openEventCards(eventCards.event)
+      await load()
+      setNotice(response.data.mergedWithExistingVerification ? 'Carta giocata: si unisce alla verifica gia aperta per questa carta.' : `Carta giocata per ${card.username}: la crew puo ora verificarla.`)
+    } catch (error: any) { setNotice(error.response?.data?.error || 'Non riesco a giocare questa carta.') }
     finally { setWorking(null) }
   }
 
@@ -103,6 +128,8 @@ export default function AdminConsole() {
       <section className="admin-panel admin-users"><h3>Utenti registrati</h3><div className="admin-user-list">{overview.users.map((user) => <span key={user.id}>{user.avatar ? <img src={user.avatar} alt="" /> : <i>{String(user.username || '?').slice(0, 1).toUpperCase()}</i>}{user.username || 'Senza nome'}</span>)}</div></section>
       <section className="admin-panel admin-merge"><h3>Unisci due profili</h3><p>Usa questa funzione quando la stessa persona ha un account e-mail e uno Telegram. Il primo profilo viene mantenuto; il secondo diventa un accesso collegato.</p><div><select className="input" value={primaryUserId} onChange={(event) => setPrimaryUserId(event.target.value)}><option value="">Profilo da mantenere</option>{overview.users.filter((user) => !user.mergedInto).map((user) => <option value={user.id} key={user.id}>{user.username || user.id}</option>)}</select><select className="input" value={secondaryUserId} onChange={(event) => setSecondaryUserId(event.target.value)}><option value="">Profilo da assorbire</option>{overview.users.filter((user) => !user.mergedInto).map((user) => <option value={user.id} key={user.id}>{user.username || user.id}</option>)}</select><button type="button" className="admin-danger" onClick={() => void mergeUsers()} disabled={working === 'merge-users'}>{working === 'merge-users' ? 'Unisco...' : 'Unisci profili'}</button></div></section>
     </>}
+    {overview && <section className="admin-panel admin-event-selector"><h3>Gioca carte per un partecipante</h3><p>Apri un evento per vedere le carte acquistate e ancora non giocate dai partecipanti.</p><div className="admin-event-picker">{overview.events.map((event) => <button type="button" className="btn btn-ghost" key={`play-${event.id}`} onClick={() => void openEventCards(event)} disabled={working === `event-cards-${event.id}`}>{working === `event-cards-${event.id}` ? 'Carico...' : event.title}</button>)}</div></section>}
+    {overview && eventCards && <section className="admin-panel admin-event-cards"><div className="admin-panel-heading"><div><p className="eyebrow">Intervento admin</p><h3>Carte non giocate · {eventCards.event.title}</h3><p>La carta verrà usata per il partecipante e seguirà la normale verifica della crew.</p></div><button type="button" className="btn btn-ghost" onClick={() => setEventCards(null)}>Chiudi</button></div>{eventCards.cards.length ? <div className="admin-event-card-list">{eventCards.cards.map((card) => <article className="admin-row" key={`${card.userId}-${card.auctionId}`}>{card.imageUrl && <img className="admin-card-preview" src={card.imageUrl} alt="" />}<div><strong>{card.title}</strong><p>{card.username} · {card.points} punti · {card.acquisitionMode === 'DIRECT' ? 'Acquisto diretto' : 'Asta vinta'}</p></div><button type="button" className="btn" onClick={() => void playEventCardForUser(card)} disabled={working === `play-${card.userId}-${card.auctionId}`}>{working === `play-${card.userId}-${card.auctionId}` ? 'Gioco...' : `Gioca per ${card.username}`}</button></article>)}</div> : <p className="muted">Non ci sono carte acquistate e non ancora giocate per questo evento.</p>}</section>}
     {overview && <AdminModeration cards={overview.cards} appeals={overview.appeals || []} onChanged={() => void load()} />}
     {notice && <p className="admin-notice">{notice}</p>}
   </section>
