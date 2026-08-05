@@ -57,7 +57,7 @@ export default function PredictionForm({ eventId, phase, acquisitionMode = 'AUCT
 
   useEffect(() => {
     void load()
-    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void load() }, 30_000)
+    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void load() }, 60_000)
     return () => window.clearInterval(timer)
   }, [eventId])
 

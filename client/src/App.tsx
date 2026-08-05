@@ -49,9 +49,18 @@ function useUnreadNotificationCount(loggedIn: boolean) {
       if (active) setCount(Math.max(0, Number(response.data?.unreadCount) || 0))
     }).catch(() => undefined)
     refresh()
-    const timer = window.setInterval(refresh, 25_000)
+    const refreshWhenVisible = () => { if (document.visibilityState === 'visible') refresh() }
+    const timer = window.setInterval(refreshWhenVisible, 120_000)
     window.addEventListener('fd:notifications-changed', refresh)
-    return () => { active = false; window.clearInterval(timer); window.removeEventListener('fd:notifications-changed', refresh) }
+    window.addEventListener('focus', refreshWhenVisible)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+      window.removeEventListener('fd:notifications-changed', refresh)
+      window.removeEventListener('focus', refreshWhenVisible)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+    }
   }, [loggedIn])
   return count
 }

@@ -4,6 +4,7 @@ import { requireAuth, AuthRequest } from '../middleware/auth'
 import { db, groupRole } from '../services/firebase'
 import { isPlatformAdmin } from '../services/platform-admin'
 import { auctionsForEvent, buyEventCard, createEventAuctions, DEFAULT_DIRECT_CARD_PRICE, placeBid, sendAuctionReminder } from '../services/auctions'
+import { runInBackground } from '../services/errors'
 
 const router = Router()
 const bidSchema = z.object({ amount: z.number().int().positive().max(1_000_000) })
@@ -26,7 +27,7 @@ router.get('/event/:eventId', requireAuth, async (req: AuthRequest, res) => {
     })
     if (changed) await batch.commit()
   }
-  void sendAuctionReminder(event.id)
+  runInBackground(sendAuctionReminder(event.id), 'Auction reminder')
   return res.json(await auctionsForEvent(event.id, req.userId!))
 })
 

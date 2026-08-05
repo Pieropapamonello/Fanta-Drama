@@ -5,6 +5,7 @@ import { db, documentData, groupRole } from '../services/firebase'
 import { notifyEventParticipants, notifyUser } from '../services/notifications'
 import { isPlatformAdmin } from '../services/platform-admin'
 import { approveKnownEventCard, rewardClaim as rewardEventClaim, submitClaimVote } from '../services/claim-voting'
+import { runInBackground } from '../services/errors'
 
 const router = Router()
 const claimSchema = z.object({
@@ -46,7 +47,7 @@ export async function rewardClaim(claimRef: FirebaseFirestore.DocumentReference,
   const confirmed = await db.collection('cardClaims').where('eventId', '==', String(claim.eventId)).get()
   const total = confirmed.docs.filter((item) => item.data().userId === claim.userId && item.data().status === 'CONFIRMED').reduce((sum, item) => sum + Number(item.data().rewardCredits ?? 0), 0)
   await db.collection('scores').doc(`${claim.userId}_${claim.eventId}`).set({ userId: claim.userId, eventId: claim.eventId, groupId: claim.groupId, points: total, updatedAt: new Date().toISOString() }, { merge: true })
-  void notifyUser(String(claim.userId), { kind: 'CLAIM_CONFIRMED', title: 'Carta giocata confermata', message: `La carta vale ${points} punti: la tua classifica si è aggiornata.`, path: `/events/${claim.eventId}` })
+  runInBackground(notifyUser(String(claim.userId), { kind: 'CLAIM_CONFIRMED', title: 'Carta giocata confermata', message: `La carta vale ${points} punti: la tua classifica si è aggiornata.`, path: `/events/${claim.eventId}` }), 'Claim confirmation notification')
 }
 
 router.get('/event/:eventId', requireAuth, async (req: AuthRequest, res) => {
@@ -114,7 +115,7 @@ router.post('/event/:eventId', requireAuth, async (req: AuthRequest, res) => {
       // who just used their own copy, otherwise every additional copy would
       // create the same group alert again.
       await rewardEventClaim(ref, claim)
-      void notifyUser(req.userId!, { kind: 'CLAIM_CONFIRMED', title: `Carta gia verificata - ${claim.cardTitle}`, message: `La carta era gia approvata dalla crew: ${claim.spentCredits} punti assegnati automaticamente.`, path: `/events/${event.id}`, actionLabel: 'Vedi classifica' })
+      runInBackground(notifyUser(req.userId!, { kind: 'CLAIM_CONFIRMED', title: `Carta gia verificata - ${claim.cardTitle}`, message: `La carta era gia approvata dalla crew: ${claim.spentCredits} punti assegnati automaticamente.`, path: `/events/${event.id}`, actionLabel: 'Vedi classifica' }), 'Known claim notification')
     } else {
       // Direct purchase lets several friends play their own copy. Keep just
       // one pending alert for the shared occurrence; its final vote resolves
@@ -123,7 +124,7 @@ router.post('/event/:eventId', requireAuth, async (req: AuthRequest, res) => {
       const hasSamePending = pendingClaims.docs.some((item) => item.id !== ref.id && item.data()?.status === 'PENDING' && String(item.data()?.cardKey ?? '') === String(claim.cardKey))
       if (hasSamePending) return res.status(201).json({ claim: documentData(ref.id, claim), mergedWithExistingVerification: true })
       const telegramButtons = [[{ text: '✅ Approva', callback_data: `claim:${ref.id}:CONFIRM` }, { text: '❌ Contesta', callback_data: `claim:${ref.id}:DENY` }], [{ text: '🛡 Contatta admin', callback_data: `claim:${ref.id}:APPEAL` }]]
-      void notifyEventParticipants(event.id, { kind: 'CLAIM_NEEDS_VOTES', title: `Carta giocata · ${claim.cardTitle}`, message: `Una carta da ${claim.spentCredits} punti attende due conferme. Apri l’evento per approvare o contestare.`, path: `/events/${event.id}`, actionLabel: 'Apri verifica carta', telegramButtons })
+      runInBackground(notifyEventParticipants(event.id, { kind: 'CLAIM_NEEDS_VOTES', title: `Carta giocata · ${claim.cardTitle}`, message: `Una carta da ${claim.spentCredits} punti attende due conferme. Apri l’evento per approvare o contestare.`, path: `/events/${event.id}`, actionLabel: 'Apri verifica carta', telegramButtons }), 'Claim vote notification')
     }
     return res.status(201).json({ claim: documentData(ref.id, claim) })
   } catch (error: any) { return res.status(400).json({ error: error.message ?? 'claim_failed' }) }

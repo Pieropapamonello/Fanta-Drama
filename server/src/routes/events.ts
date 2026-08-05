@@ -8,6 +8,7 @@ import { createDramaBeat } from '../services/drama-director'
 import { isPlatformAdmin } from '../services/platform-admin'
 import { createEventAuctions, ensureEventWallet, sendAuctionReminder } from '../services/auctions'
 import { deleteDropboxAsset } from '../services/assets'
+import { runInBackground } from '../services/errors'
 
 const router = Router()
 const schema = z.object({ title: z.string().trim().min(1).max(120), description: z.string().trim().max(1000).optional(), startsAt: z.string().datetime(), endsAt: z.string().datetime(), groupId: z.string().min(1), acquisitionMode: z.enum(['AUCTION', 'DIRECT']).default('AUCTION'), cardKeys: z.array(z.string().regex(/^(starter|custom):[a-zA-Z0-9_-]+$/)).min(1).max(150), closePredictionsAt: z.string().datetime().optional(), imageUrl: z.string().url().max(2048).optional(), imageStoragePath: z.string().max(1024).optional() })
@@ -77,7 +78,7 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
     // portafoglio dedicato, esattamente come chi si iscrivera' in seguito.
     await ensureEventWallet(ref.id, req.userId!)
     const auctionCount = await createEventAuctions(ref.id, event)
-    void announceNewEvent(ref.id, event, req.userId!)
+    runInBackground(announceNewEvent(ref.id, event, req.userId!), 'New event announcement')
     return res.status(201).json({ event: { ...documentData(ref.id, event), auctionCount } })
   } catch (error: any) { return res.status(400).json({ error: error.message ?? 'invalid_event' }) }
 })
@@ -96,7 +97,7 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
 router.get('/:id', requireAuth, async (req: AuthRequest, res) => {
   const snapshot = await db.collection('events').doc(req.params.id).get()
   if (!snapshot.exists || (!await groupRole(snapshot.data()!.groupId, req.userId!) && !await isPlatformAdmin(req.userId!))) return res.status(404).json({ error: 'not_found' })
-  void sendAuctionReminder(snapshot.id)
+  runInBackground(sendAuctionReminder(snapshot.id), 'Auction reminder')
   const event = snapshot.data() as Record<string, unknown>
   const group = await db.collection('groups').doc(String(event.groupId)).get()
   const groupMember = ((group.data()?.memberIds as string[] | undefined) ?? []).includes(req.userId!) || await isPlatformAdmin(req.userId!)
@@ -110,7 +111,7 @@ router.post('/:id/join', requireAuth, async (req: AuthRequest, res) => {
   if (eventPhase(event.data() as Record<string, unknown>) === 'CONCLUSO') return res.status(409).json({ error: 'event_finished' })
   await ref.update({ participantIds: FieldValue.arrayUnion(req.userId!), updatedAt: new Date().toISOString() })
   await ensureEventWallet(event.id, req.userId!)
-  void notifyGroupMembers(String(event.data()?.groupId), { kind: 'EVENT_JOINED', title: `Nuovo partecipante · ${event.data()?.title}`, message: 'Un membro della crew è entrato nella sfida.', path: `/events/${event.id}` }, [req.userId!])
+  runInBackground(notifyGroupMembers(String(event.data()?.groupId), { kind: 'EVENT_JOINED', title: `Nuovo partecipante · ${event.data()?.title}`, message: 'Un membro della crew è entrato nella sfida.', path: `/events/${event.id}` }, [req.userId!]), 'Event join notification')
   return res.json({ ok: true })
 })
 

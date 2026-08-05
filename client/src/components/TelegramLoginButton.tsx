@@ -24,9 +24,10 @@ export default function TelegramLoginButton({ label = 'Continua con Telegram —
         const requested = sessionStorage.getItem('fd_after_login')
         sessionStorage.removeItem('fd_after_login')
         navigate(bootstrap.data.user?.profileCompleted ? requested || '/dashboard' : '/profile/setup', { replace: true })
-      } catch {
+      } catch (error: any) {
         completing.current = false
-        setMessage('Non riesco a completare l’accesso Telegram. Riprova.')
+        const code = error.response?.data?.error
+        setMessage(code === 'firestore_quota_exhausted' || code === 'data_service_temporarily_unavailable' ? 'Telegram ha autorizzato l’accesso, ma Firebase è temporaneamente indisponibile. Riprova più tardi.' : 'Non riesco a completare l’accesso Telegram. Riprova.')
       }
     }
     const receive = (event: MessageEvent) => {

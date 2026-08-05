@@ -11,7 +11,7 @@ export default function EventDetail() {
   const { id } = useParams(); const navigate = useNavigate()
   const [event, setEvent] = useState<any>(null); const [leaderboard, setLeaderboard] = useState<any[]>([]); const [selectedParticipant, setSelectedParticipant] = useState<any>(null); const [notice, setNotice] = useState(''); const [joining, setJoining] = useState(false)
   const load = useCallback(async () => { if (!id) return; try { const [detail, ranking] = await Promise.all([api.get(`/events/${id}`), api.get(`/events/${id}/leaderboard`)]); setEvent(detail.data.event); setLeaderboard(ranking.data.leaderboard || []) } catch { setEvent(null) } }, [id])
-  useEffect(() => { void load(); const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void load() }, 20_000); return () => window.clearInterval(timer) }, [load])
+  useEffect(() => { void load(); const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void load() }, 60_000); return () => window.clearInterval(timer) }, [load])
   if (!event) return <div className="empty-state">Sto caricando la drama room…</div>
   const mode = event.acquisitionMode === 'DIRECT' ? 'Acquisto diretto' : 'Asta esclusiva'; const marketCloses = event.acquisitionMode === 'AUCTION' ? new Date(new Date(event.startsAt).getTime() - 3600000).toISOString() : event.endsAt
   const join = async () => { setJoining(true); try { await api.post(`/events/${event.id}/join`); await load() } catch { setNotice('Non riesco a entrare nell’evento.') } finally { setJoining(false) } }

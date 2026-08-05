@@ -1,4 +1,5 @@
 import { getMessaging } from 'firebase-admin/messaging'
+import { FieldValue } from 'firebase-admin/firestore'
 import { db, firebaseApp } from './firebase'
 
 const appUrl = 'https://fanta-drama.onrender.com'
@@ -21,6 +22,19 @@ export type NotificationPayload = {
   actionLabel?: string
   telegramButtons?: Array<Array<Record<string, string>>>
   kind: 'EVENT_CREATED' | 'EVENT_CLOSED' | 'EVENT_JOINED' | 'EVENT_CARD_CREATED' | 'SCORE_UPDATED' | 'AUCTION_OPENED' | 'AUCTION_OUTBID' | 'AUCTION_WON' | 'AUCTION_REMINDER' | 'CLAIM_NEEDS_VOTES' | 'CLAIM_REMINDER' | 'CLAIM_ADMIN_REVIEW' | 'CLAIM_CONFIRMED' | 'CLAIM_DENIED' | 'APPEAL_OPENED' | 'APPEAL_DECIDED'
+}
+
+async function storeUnreadNotification(userId: string, notification: Record<string, unknown>) {
+  const createdAt = new Date().toISOString()
+  const notificationRef = db.collection('notifications').doc()
+  const userRef = db.collection('users').doc(userId)
+  const batch = db.batch()
+  batch.set(notificationRef, { userId, ...notification, createdAt })
+  batch.set(userRef, {
+    unreadNotificationCount: FieldValue.increment(1),
+    updatedAt: createdAt
+  }, { merge: true })
+  await batch.commit()
 }
 
 export async function sendTelegramMessage(chatId: string | number, text: string, path = '/telegram-miniapp', extraButtons?: Array<Array<Record<string, string>>>, actionLabel = 'Apri FantaDrama') {
@@ -73,7 +87,7 @@ export async function sendDeviceNotificationTest(userId: string) {
     kind: 'SCORE_UPDATED'
   }
   const delivery = await sendDevicePush(userId, payload)
-  await db.collection('notifications').add({ userId, ...payload, preference: 'DEVICE_TEST', deliveries: [delivery], createdAt: new Date().toISOString() })
+  await storeUnreadNotification(userId, { ...payload, preference: 'DEVICE_TEST', deliveries: [delivery] })
   return delivery
 }
 
@@ -102,7 +116,7 @@ export async function notifyUser(userId: string, payload: NotificationPayload) {
   } else if (channels.includes('TELEGRAM')) {
     results.push({ channel: 'telegram', status: 'not_connected' })
   }
-  await db.collection('notifications').add({ userId, ...payload, preference, channels, deliveries: results, createdAt: new Date().toISOString() })
+  await storeUnreadNotification(userId, { ...payload, preference, channels, deliveries: results })
   return results
 }
 

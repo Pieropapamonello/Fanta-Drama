@@ -24,7 +24,7 @@ export default function GroupAuctions() {
     } catch { setNotice('Non riesco a caricare il mercato della crew.') }
   }, [groupId])
 
-  useEffect(() => { void load(); const timer = window.setInterval(() => void load(), 20_000); return () => window.clearInterval(timer) }, [load])
+  useEffect(() => { void load(); const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void load() }, 60_000); return () => window.clearInterval(timer) }, [load])
 
   const enriched = useMemo(() => cards.map((card) => ({ ...card, cardKey: cardKey(card), auction: auctions.find((auction) => auction.cardKey === cardKey(card)) || null })), [cards, auctions])
   const commonCards = enriched.filter((card) => card.cardKey.startsWith('starter:'))

@@ -17,6 +17,8 @@ const profileSchema = z.object({
 const pushSubscriptionSchema = z.object({ token: z.string().min(40).max(4096), platform: z.string().max(120).optional(), deviceId: z.string().min(8).max(120).optional() })
 const pushDiagnosticSchema = z.object({ code: z.string().max(120).optional(), message: z.string().max(500).optional() })
 const avatarSchema = z.object({ avatar: z.string().url().max(2048) })
+const NOTIFICATION_LIST_LIMIT = 50
+const OVERVIEW_NOTIFICATION_LIMIT = 8
 
 function channelsFromLegacy(preference: string) {
   if (preference === 'IN_APP') return []
@@ -24,6 +26,21 @@ function channelsFromLegacy(preference: string) {
   if (preference === 'EMAIL') return []
   if (preference === 'BOTH') return ['TELEGRAM']
   return ['DEVICE', 'TELEGRAM']
+}
+
+function unreadNotificationCount(user: Record<string, unknown> | undefined) {
+  const count = Number(user?.unreadNotificationCount ?? 0)
+  return Number.isFinite(count) && count > 0 ? Math.floor(count) : 0
+}
+
+function notificationWithReadState(id: string, data: Record<string, unknown>, notificationsReadAt: string) {
+  const notification = documentData(id, data)
+  if (notification.readAt || !notificationsReadAt) return notification
+  const createdAt = Date.parse(String(notification.createdAt ?? ''))
+  const readAt = Date.parse(notificationsReadAt)
+  return Number.isFinite(readAt) && (!Number.isFinite(createdAt) || createdAt <= readAt)
+    ? { ...notification, readAt: notificationsReadAt }
+    : notification
 }
 
 async function profileWithConnections(userId: string) {
@@ -44,7 +61,7 @@ router.get('/overview', requireAuth, async (req: AuthRequest, res) => {
   const [groups, cards, notifications] = await Promise.all([
     db.collection('groups').where('memberIds', 'array-contains', userId).get(),
     db.collection('cards').where('authorId', '==', userId).get(),
-    db.collection('notifications').where('userId', '==', userId).get()
+    db.collection('notifications').where('userId', '==', userId).limit(OVERVIEW_NOTIFICATION_LIMIT).get()
   ])
   const groupIds = new Set(groups.docs.map((group) => group.id))
   const allEvents = await db.collection('events').get()
@@ -76,20 +93,28 @@ router.get('/overview', requireAuth, async (req: AuthRequest, res) => {
 })
 
 router.get('/notifications', requireAuth, async (req: AuthRequest, res) => {
-  const snapshot = await db.collection('notifications').where('userId', '==', req.userId!).get()
-  const notifications = snapshot.docs.map((item) => documentData(item.id, item.data() as Record<string, unknown>)).sort((left, right) => String(right.createdAt ?? '').localeCompare(String(left.createdAt ?? ''))).slice(0, 50)
-  return res.json({ notifications, unreadCount: notifications.filter((item) => !item.readAt).length })
+  const userRef = db.collection('users').doc(req.userId!)
+  const [snapshot, userSnapshot] = await Promise.all([
+    db.collection('notifications').where('userId', '==', req.userId!).limit(NOTIFICATION_LIST_LIMIT).get(),
+    userRef.get()
+  ])
+  const user = userSnapshot.data() as Record<string, unknown> | undefined
+  const notificationsReadAt = String(user?.notificationsReadAt ?? '')
+  const notifications = snapshot.docs
+    .map((item) => notificationWithReadState(item.id, item.data() as Record<string, unknown>, notificationsReadAt))
+    .sort((left, right) => String(right.createdAt ?? '').localeCompare(String(left.createdAt ?? '')))
+  return res.json({ notifications, unreadCount: unreadNotificationCount(user) })
 })
 
 router.get('/notifications/unread-count', requireAuth, async (req: AuthRequest, res) => {
-  const snapshot = await db.collection('notifications').where('userId', '==', req.userId!).get()
-  return res.json({ unreadCount: snapshot.docs.filter((item) => !item.data()?.readAt).length })
+  const user = await db.collection('users').doc(req.userId!).get()
+  return res.json({ unreadCount: unreadNotificationCount(user.data() as Record<string, unknown> | undefined) })
 })
 
 router.post('/notifications/read', requireAuth, async (req: AuthRequest, res) => {
-  const snapshot = await db.collection('notifications').where('userId', '==', req.userId!).get()
-  const batch = db.batch(); snapshot.docs.forEach((item) => batch.update(item.ref, { readAt: new Date().toISOString() })); await batch.commit()
-  return res.json({ ok: true })
+  const notificationsReadAt = new Date().toISOString()
+  await db.collection('users').doc(req.userId!).set({ unreadNotificationCount: 0, notificationsReadAt, updatedAt: notificationsReadAt }, { merge: true })
+  return res.json({ ok: true, notificationsReadAt })
 })
 
 router.post('/push-subscriptions', requireAuth, async (req: AuthRequest, res) => {

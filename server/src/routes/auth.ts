@@ -3,6 +3,7 @@ import { z } from 'zod'
 import crypto from 'crypto'
 import { requireAuth, AuthRequest } from '../middleware/auth'
 import { db, documentData, firebaseAuth } from '../services/firebase'
+import { isFirestoreQuotaError } from '../services/errors'
 
 const router = Router()
 const schema = z.object({ username: z.string().trim().min(3).max(30).optional() })
@@ -90,6 +91,7 @@ router.post('/telegram', async (req, res) => {
 
     return res.json(await telegramCustomToken({ id: Number(data.id), first_name: data.first_name, last_name: data.last_name, username: data.username, photo_url: data.photo_url }))
   } catch (error: any) {
+    if (isFirestoreQuotaError(error)) return res.status(503).json({ error: 'firestore_quota_exhausted' })
     return res.status(400).json({ error: error.message ?? 'telegram_login_failed' })
   }
 })
@@ -99,20 +101,25 @@ router.post('/telegram', async (req, res) => {
 router.get('/telegram/oidc/start', async (req, res) => {
   const config = telegramLoginConfig()
   if (!config) return res.redirect(`${appUrl}/login?telegram_error=not_configured`)
-  const state = randomUrlToken()
-  const codeVerifier = randomUrlToken(48)
-  const nonce = randomUrlToken()
-  const challenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url')
-  await db.collection('telegramOidcRequests').doc(state).set({
-    codeVerifier, nonce, redirectUri: telegramLoginCallbackUrl,
-    popup: req.query.popup === '1', createdAt: new Date().toISOString(), expiresAt: Date.now() + 10 * 60 * 1000
-  })
-  const params = new URLSearchParams({
-    client_id: config.clientId, redirect_uri: telegramLoginCallbackUrl, response_type: 'code',
-    scope: 'openid profile telegram:bot_access', state, nonce,
-    code_challenge: challenge, code_challenge_method: 'S256'
-  })
-  return res.redirect(`https://oauth.telegram.org/auth?${params.toString()}`)
+  try {
+    const state = randomUrlToken()
+    const codeVerifier = randomUrlToken(48)
+    const nonce = randomUrlToken()
+    const challenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url')
+    await db.collection('telegramOidcRequests').doc(state).set({
+      codeVerifier, nonce, redirectUri: telegramLoginCallbackUrl,
+      popup: req.query.popup === '1', createdAt: new Date().toISOString(), expiresAt: Date.now() + 10 * 60 * 1000
+    })
+    const params = new URLSearchParams({
+      client_id: config.clientId, redirect_uri: telegramLoginCallbackUrl, response_type: 'code',
+      scope: 'openid profile telegram:bot_access', state, nonce,
+      code_challenge: challenge, code_challenge_method: 'S256'
+    })
+    return res.redirect(`https://oauth.telegram.org/auth?${params.toString()}`)
+  } catch (startError) {
+    if (!isFirestoreQuotaError(startError)) console.error('Telegram OIDC start failed', startError)
+    return res.redirect(`${appUrl}/login?telegram_error=temporarily_unavailable`)
+  }
 })
 
 const telegramOidcCallback: RequestHandler = async (req, res) => {
@@ -154,7 +161,7 @@ const telegramOidcCallback: RequestHandler = async (req, res) => {
     return res.redirect(`${appUrl}/telegram?ticket=${encodeURIComponent(ticket)}${pending.popup ? '&popup=1' : ''}`)
   } catch (callbackError) {
     console.error('Telegram OIDC login failed', callbackError)
-    return res.redirect(`${appUrl}/login?telegram_error=failed`)
+    return res.redirect(`${appUrl}/login?telegram_error=${isFirestoreQuotaError(callbackError) ? 'temporarily_unavailable' : 'failed'}`)
   }
 }
 
@@ -175,7 +182,8 @@ router.post('/telegram/complete', async (req, res) => {
       return { customToken: data.customToken, username: data.username }
     })
     return res.json(login)
-  } catch {
+  } catch (error) {
+    if (isFirestoreQuotaError(error)) return res.status(503).json({ error: 'firestore_quota_exhausted' })
     return res.status(401).json({ error: 'invalid_telegram_ticket' })
   }
 })
@@ -191,6 +199,7 @@ router.post('/telegram-miniapp', async (req, res) => {
     return res.json(await telegramCustomToken({ id: user.id!, first_name: user.first_name!, last_name: user.last_name, username: user.username, photo_url: user.photo_url }))
   } catch (error: any) {
     console.error('Telegram Mini App authentication failed', error.message ?? error)
+    if (isFirestoreQuotaError(error)) return res.status(503).json({ error: 'firestore_quota_exhausted' })
     return res.status(400).json({ error: error.message ?? 'telegram_miniapp_failed' })
   }
 })
@@ -200,9 +209,10 @@ router.post('/bootstrap', requireAuth, async (req: AuthRequest, res) => {
     const { username } = schema.parse(req.body)
     const userRecord = await firebaseAuth.getUser(req.userId!)
     const ref = db.collection('users').doc(req.userId!)
-    const existing = await ref.get()
+    const existingData = req.userProfileExists ? req.userProfile : undefined
+    const existing = req.userProfileExists === undefined ? await ref.get() : null
 
-    if (!existing.exists) {
+    if (!(existing?.exists ?? req.userProfileExists)) {
       const baseUsername = username ?? userRecord.email?.split('@')[0] ?? 'Giocatore'
       const duplicate = await db.collection('users').where('username', '==', baseUsername).limit(1).get()
       const finalUsername = duplicate.empty ? baseUsername : `${baseUsername}-${req.userId!.slice(0, 5)}`
@@ -211,8 +221,10 @@ router.post('/bootstrap', requireAuth, async (req: AuthRequest, res) => {
       return res.status(201).json({ user: documentData(req.userId!, user) })
     }
 
-    return res.json({ user: documentData(req.userId!, existing.data() as Record<string, unknown>) })
+    return res.json({ user: documentData(req.userId!, (existing?.data() ?? existingData) as Record<string, unknown>) })
   } catch (error: any) {
+    if (isFirestoreQuotaError(error)) return res.status(503).json({ error: 'firestore_quota_exhausted' })
+    console.error('Authentication bootstrap failed', error)
     return res.status(400).json({ error: error.message ?? 'bootstrap_failed' })
   }
 })

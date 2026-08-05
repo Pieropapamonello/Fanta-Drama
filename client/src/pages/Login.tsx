@@ -26,6 +26,7 @@ function emailLoginErrorMessage(error: any) {
   if (code === 'auth/too-many-requests') return 'Troppi tentativi ravvicinati. Attendi qualche minuto, poi riprova oppure reimposta la password da Firebase.'
   if (code === 'auth/network-request-failed') return 'Non riesco a raggiungere Firebase. Controlla la connessione e riprova.'
   if (code === 'auth/operation-not-allowed') return 'L’accesso e-mail non è attivo nel progetto Firebase. Va abilitato in Authentication → Sign-in method.'
+  if (code === 'firestore_quota_exhausted' || code === 'data_service_temporarily_unavailable') return 'Le credenziali sono state accettate, ma il database Firebase è temporaneamente indisponibile. Non cambiare password: riprova dopo il ripristino della quota.'
   if (code === 'missing_token' || code === 'invalid_token') return 'L’accesso è riuscito, ma il token non è stato accettato dal server. Riprova una volta: ora l’app lo salva prima di aprire il profilo.'
   return 'L’accesso non è stato completato. Riprova tra poco.'
 }
@@ -57,7 +58,7 @@ export default function Login() {
         navigate(bootstrap.data.user?.profileCompleted ? afterLoginPath() : '/profile/setup', { replace: true })
       } catch (error: any) {
         const detail = error.response?.data?.error
-        setTelegramMessage(`Accesso Telegram non riuscito${detail ? `: ${detail}` : ''}. Chiudi e riapri la Mini App dal bot.`)
+        setTelegramMessage(detail === 'firestore_quota_exhausted' || detail === 'data_service_temporarily_unavailable' ? 'Telegram ha autorizzato l’accesso, ma il database Firebase è temporaneamente indisponibile. Riprova più tardi.' : `Accesso Telegram non riuscito${detail ? `: ${detail}` : ''}. Chiudi e riapri la Mini App dal bot.`)
         telegramAttempted.current = false
       }
     }
@@ -75,6 +76,7 @@ export default function Login() {
   useEffect(() => {
     const reason = new URLSearchParams(window.location.search).get('telegram_error')
     if (reason === 'not_configured') setTelegramMessage('L’accesso Telegram è in fase di attivazione. Riprova tra poco.')
+    else if (reason === 'temporarily_unavailable') setTelegramMessage('Telegram ha autorizzato l’accesso, ma il database Firebase è temporaneamente indisponibile. Riprova dopo il ripristino della quota.')
     else if (reason) setTelegramMessage('Accesso Telegram annullato o non riuscito. Riprova quando vuoi.')
   }, [])
   const onSubmit = async (data: any) => {

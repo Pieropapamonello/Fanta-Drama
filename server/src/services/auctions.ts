@@ -1,6 +1,7 @@
 import { db, documentData } from './firebase'
 import { notifyGroupMembers, notifyUser } from './notifications'
 import { starterCards } from '../data/starter-content'
+import { runInBackground } from './errors'
 
 const INITIAL_CREDITS = 1000
 const OPENING_BID = 20
@@ -141,7 +142,7 @@ export async function placeBid(auctionId: string, userId: string, amount: number
   })
   const marketPath = result.auction.marketScope === 'GROUP' ? `/groups/${result.auction.groupId}/cards` : `/events/${result.auction.eventId}`
   const marketLabel = result.auction.marketScope === 'GROUP' ? 'Apri il mercato della crew' : 'Apri l’evento'
-  void notifyGroupMembers(String(result.auction.groupId), { kind: 'AUCTION_OUTBID', title: `Nuova offerta · ${result.auction.title}`, message: `${profileName(result.auction.leaderName)} ha puntato ${amount} crediti. Asta in scadenza il ${deadlineLabel(result.auction.closesAt)}. ${marketLabel} per rilanciare.`, path: marketPath, actionLabel: 'Rilancia ora' }, [userId])
+  runInBackground(notifyGroupMembers(String(result.auction.groupId), { kind: 'AUCTION_OUTBID', title: `Nuova offerta · ${result.auction.title}`, message: `${profileName(result.auction.leaderName)} ha puntato ${amount} crediti. Asta in scadenza il ${deadlineLabel(result.auction.closesAt)}. ${marketLabel} per rilanciare.`, path: marketPath, actionLabel: 'Rilancia ora' }, [userId]), 'Auction bid notification')
   return result.auction
 }
 
@@ -165,7 +166,7 @@ export async function finalizeAuction(auctionId: string) {
   if (result?.status === 'WON') {
     const path = result.marketScope === 'GROUP' ? `/groups/${result.groupId}/cards` : `/events/${result.eventId}`
     const context = result.marketScope === 'GROUP' ? 'per questa crew' : 'per questo evento'
-    void notifyUser(String(result.ownerId), { kind: 'AUCTION_WON', title: `Hai vinto · ${result.title}`, message: `La carta è tua ${context}: hai speso ${result.currentBid} crediti.`, path })
+    runInBackground(notifyUser(String(result.ownerId), { kind: 'AUCTION_WON', title: `Hai vinto · ${result.title}`, message: `La carta è tua ${context}: hai speso ${result.currentBid} crediti.`, path }), 'Auction winner notification')
   }
   return result
 }

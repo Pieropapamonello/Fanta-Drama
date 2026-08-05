@@ -7,6 +7,7 @@ import { starterCards } from '../data/starter-content'
 import { createEventCardAuction, DEFAULT_DIRECT_CARD_PRICE } from '../services/auctions'
 import { notifyGroupMembers } from '../services/notifications'
 import { isPlatformAdmin } from '../services/platform-admin'
+import { runInBackground } from '../services/errors'
 
 const router = Router()
 const auctionOnly = (_req: AuthRequest, res: any) => res.status(410).json({ error: 'cards_are_available_only_through_event_auctions' })
@@ -74,7 +75,7 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
     await ref.set(card)
     if (event) {
       await createEventCardAuction(event.id, event.data() as Record<string, unknown>, ref.id, card)
-      void notifyGroupMembers(String(event.data()?.groupId), { kind: 'EVENT_CARD_CREATED', title: `Nuova carta per ${event.data()?.title}`, message: `${card.creatorName} ha aggiunto “${card.title}”: apri l’evento per comprarla o rilanciare.`, path: `/events/${event.id}`, actionLabel: 'Apri mercato evento' }, [req.userId!])
+      runInBackground(notifyGroupMembers(String(event.data()?.groupId), { kind: 'EVENT_CARD_CREATED', title: `Nuova carta per ${event.data()?.title}`, message: `${card.creatorName} ha aggiunto “${card.title}”: apri l’evento per comprarla o rilanciare.`, path: `/events/${event.id}`, actionLabel: 'Apri mercato evento' }, [req.userId!]), 'Event card notification')
     }
     return res.status(201).json({ catalogCard: documentData(ref.id, card) })
   } catch (error: any) { return res.status(400).json({ error: error.message ?? 'invalid_card' }) }
